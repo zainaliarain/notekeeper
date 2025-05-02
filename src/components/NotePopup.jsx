@@ -1,92 +1,82 @@
-import { detectBlocks, highlightSearchTerm } from '../utils/format';
-import PropTypes from 'prop-types';
+import { useState } from 'react';
+  import PropTypes from 'prop-types';
+  import { marked } from 'marked';
+  import axios from 'axios';
+  import bcrypt from 'bcryptjs';
 
-const NotePopup = ({ button, searchTerm, showPopup, closePopup, showToast }) => {
-  if (!showPopup || !button) return null;
+  const NotePopup = ({ button, searchTerm, showPopup, closePopup, showToast }) => {
+    const [password, setPassword] = useState('');
+    const [isUnlocked, setIsUnlocked] = useState(false);
 
-  const parsed = detectBlocks(button.query);
-  const formatted = parsed.map((block, index) => {
-    const highlightedContent = highlightSearchTerm(block.content, searchTerm);
-    const blockContent = block.content.replace(/'/g, "\\'");
-    let blockHtml;
-    if (block.type === 'sql') {
-      blockHtml = `
-        <div class="block sql">
-          <strong>SQL Query:</strong>
-          <pre>${highlightedContent}</pre>
-          <button class="popup-copy-button" onclick="navigator.clipboard.writeText('${blockContent}')
-            .then(() => document.querySelector('.toast').innerHTML = 'Copied to clipboard')
-            .catch(() => document.querySelector('.toast').innerHTML = 'Copy failed')">
-            📋 Copy
-          </button>
-        </div>`;
-    } else if (block.type === 'command') {
-      blockHtml = `
-        <div class="block command">
-          <strong>Command:</strong>
-          <pre>${highlightedContent}</pre>
-          <button class="popup-copy-button" onclick="navigator.clipboard.writeText('${blockContent}')
-            .then(() => document.querySelector('.toast').innerHTML = 'Copied to clipboard')
-            .catch(() => document.querySelector('.toast').innerHTML = 'Copy failed')">
-            📋 Copy
-          </button>
-        </div>`;
-    } else if (block.type === 'step') {
-      blockHtml = `
-        <div class="block step">
-          <strong>${highlightedContent}</strong>
-          <button class="popup-copy-button" onclick="navigator.clipboard.writeText('${blockContent}')
-            .then(() => document.querySelector('.toast').innerHTML = 'Copied to clipboard')
-            .catch(() => document.querySelector('.toast').innerHTML = 'Copy failed')">
-            📋 Copy
-          </button>
-        </div>`;
-    } else {
-      blockHtml = `
-        <div class="block text">
-          <pre>${highlightedContent}</pre>
-          <button class="popup-copy-button" onclick="navigator.clipboard.writeText('${blockContent}')
-            .then(() => document.querySelector('.toast').innerHTML = 'Copied to clipboard')
-            .catch(() => document.querySelector('.toast').innerHTML = 'Copy failed')">
-            📋 Copy
-          </button>
-        </div>`;
-    }
-    return blockHtml;
-  });
+    const handleUnlock = async () => {
+      if (!button.isPrivate) {
+        setIsUnlocked(true);
+        return;
+      }
+      try {
+        const response = await axios.get(`http://localhost:5000/buttons/${button._id}`);
+        const storedPassword = response.data.password;
+        if (storedPassword && await bcrypt.compare(password, storedPassword)) {
+          setIsUnlocked(true);
+          showToast('Note unlocked');
+        } else {
+          showToast('Incorrect password');
+        }
+      } catch (error) {
+        showToast('Error verifying password');
+        console.error('Password verification error:', error);
+      }
+    };
 
-  if (button.imageUrl) {
-    formatted.push(`
-      <div class="block image">
-        <strong>Image:</strong>
-        <img src="${button.imageUrl}" alt="Note image" style="max-width: 100%; border-radius: 8px;" />
-        <button class="popup-copy-button" onclick="navigator.clipboard.writeText('${button.imageUrl}')
-          .then(() => document.querySelector('.toast').innerHTML = 'Image URL copied')
-          .catch(() => document.querySelector('.toast').innerHTML = 'Copy failed')">
-          📋 Copy URL
-        </button>
-      </div>`);
-  }
+    if (!button) return null;
 
-  return (
-    <div className="popup-overlay" onClick={closePopup}>
-      <div className="popup-box" onClick={(e) => e.stopPropagation()}>
-        <h3>Note Content</h3>
-        <div dangerouslySetInnerHTML={{ __html: formatted.join('') }} />
-        <button className="close-popup" onClick={closePopup}>
-          Close
-        </button>
+    return (
+      <div className={`popup ${showPopup ? 'show' : ''}`}>
+        <div className="popup-content">
+          <button className="close-button" onClick={closePopup}>×</button>
+          {!isUnlocked ? (
+            <>
+              <h3>{button.name}</h3>
+              {button.isPrivate ? (
+                <>
+                  <input
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="note-input"
+                  />
+                  <button onClick={handleUnlock} className="submit-button">
+                    Unlock Note
+                  </button>
+                </>
+              ) : (
+                <button onClick={handleUnlock} className="submit-button">
+                  View Note
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <h3>{button.name}</h3>
+              <p dangerouslySetInnerHTML={{ __html: marked(button.query) }} />
+              {button.imageUrl && <img src={button.imageUrl} alt="Note" className="note-image" />}
+              <p>Category: {button.category || 'None'}</p>
+              <p>Pinned: {button.isPinned ? 'Yes' : 'No'}</p>
+              <p>Private: {button.isPrivate ? 'Yes' : 'No'}</p>
+            </>
+          )}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
-NotePopup.propTypes = {
-  button: PropTypes.object,
-  searchTerm: PropTypes.string.isRequired,
-  showPopup: PropTypes.bool.isRequired,
-  closePopup: PropTypes.func.isRequired,
-  showToast: PropTypes.func.isRequired,
-};
+  NotePopup.propTypes = {
+    button: PropTypes.object,
+    searchTerm: PropTypes.string.isRequired,
+    showPopup: PropTypes.bool.isRequired,
+    closePopup: PropTypes.func.isRequired,
+    showToast: PropTypes.func.isRequired,
+  };
 
-export default NotePopup;
+  export default NotePopup;
