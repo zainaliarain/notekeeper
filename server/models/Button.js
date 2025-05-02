@@ -10,6 +10,6 @@ const buttonSchema = new mongoose.Schema({
   userId: { type: String, required: true },
 });
 
-buttonSchema.index({ userId: 1 }); // Added index for performance
+buttonSchema.index({ userId: 1 });
 
 module.exports = mongoose.model('Button', buttonSchema);
