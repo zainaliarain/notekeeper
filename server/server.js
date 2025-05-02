@@ -4,8 +4,8 @@ const cors = require('cors');
 const admin = require('firebase-admin');
 const Button = require('./models/Button');
 
+// Initialize Firebase Admin SDK with service account
 const serviceAccount = require('./firebase-service-account.json');
-
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
@@ -14,14 +14,15 @@ const app = express();
 app.use(cors({ origin: ['http://localhost:5173'] }));
 app.use(express.json());
 
-mongoose
-  .connect('mongodb://localhost/note-keeper', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost/note-keeper', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
+// Middleware to authenticate Firebase tokens
 const authenticate = async (req, res, next) => {
   const token = req.headers.authorization?.split('Bearer ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
@@ -36,6 +37,7 @@ const authenticate = async (req, res, next) => {
   }
 };
 
+// Get all accessible buttons (user's or public)
 app.get('/buttons', authenticate, async (req, res) => {
   try {
     const buttons = await Button.find({
@@ -48,6 +50,7 @@ app.get('/buttons', authenticate, async (req, res) => {
   }
 });
 
+// Create a new button
 app.post('/buttons', authenticate, async (req, res) => {
   try {
     const { name, query, category, isPinned, isPrivate, imageUrl } = req.body;
@@ -68,6 +71,7 @@ app.post('/buttons', authenticate, async (req, res) => {
   }
 });
 
+// Update an existing button
 app.put('/buttons/:id', authenticate, async (req, res) => {
   try {
     const { name, query, category, isPinned, isPrivate, imageUrl } = req.body;
@@ -88,6 +92,7 @@ app.put('/buttons/:id', authenticate, async (req, res) => {
   }
 });
 
+// Delete a button
 app.delete('/buttons/:id', authenticate, async (req, res) => {
   try {
     const button = await Button.findOneAndDelete({ _id: req.params.id, userId: req.user.uid });
@@ -99,5 +104,6 @@ app.delete('/buttons/:id', authenticate, async (req, res) => {
   }
 });
 
+// Start the server
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

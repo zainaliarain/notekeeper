@@ -10,17 +10,11 @@ export const detectBlocks = (text) => {
 
   for (let line of lines) {
     const trimmed = line.trim();
-    if (
-      /^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|USE|GRANT|REVOKE)\b/i.test(trimmed)
-    ) {
+    if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|USE|GRANT|REVOKE)\b/i.test(trimmed)) {
       pushCurrent();
       current = { type: 'sql', content: line };
       pushCurrent();
-    } else if (
-      /^(cd|ls|cat|cp|mv|chmod|chown|mount|umount|nano|vi|sudo|systemctl|service|curl|wget|ping|ifconfig|ip|rm|mkdir|touch|df|du|find|grep|tar|zip|unzip|ssh|scp|rsync)\b/.test(
-        trimmed
-      )
-    ) {
+    } else if (/^(cd|ls|cat|cp|mv|chmod|chown|mount|umount|nano|vi|sudo|systemctl|service|curl|wget|ping|ifconfig|ip|rm|mkdir|touch|df|du|find|grep|tar|zip|unzip|ssh|scp|rsync)\b/.test(trimmed)) {
       pushCurrent();
       current = { type: 'command', content: line };
       pushCurrent();

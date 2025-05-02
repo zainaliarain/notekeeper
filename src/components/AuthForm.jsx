@@ -1,9 +1,9 @@
 import { useState } from 'react';
+import { auth } from '../firebase.js';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { validateEmail, validatePassword } from '../utils/validation';
-import PropTypes from 'prop-types';
+import { validateEmail, validatePassword, validateDisplayName } from '../utils/validation';
 
-const AuthForm = ({ auth, onAuthSuccess, showToast }) => {
+const AuthForm = ({ showToast }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -19,7 +19,7 @@ const AuthForm = ({ auth, onAuthSuccess, showToast }) => {
       showToast('Password must be at least 6 characters long');
       return;
     }
-    if (isSignup && !displayName.trim()) {
+    if (isSignup && !validateDisplayName(displayName)) {
       showToast('Please enter your name');
       return;
     }
@@ -36,28 +36,13 @@ const AuthForm = ({ auth, onAuthSuccess, showToast }) => {
       setEmail('');
       setPassword('');
       setDisplayName('');
-      onAuthSuccess();
     } catch (error) {
       let message = 'Authentication failed';
-      switch (error.code) {
-        case 'auth/email-already-in-use':
-          message = 'Email is already in use';
-          break;
-        case 'auth/invalid-email':
-          message = 'Invalid email address';
-          break;
-        case 'auth/weak-password':
-          message = 'Password is too weak';
-          break;
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-          message = 'Invalid email or password';
-          break;
-        default:
-          break;
-      }
+      if (error.code === 'auth/email-already-in-use') message = 'Email is already in use';
+      else if (error.code === 'auth/invalid-email') message = 'Invalid email address';
+      else if (error.code === 'auth/weak-password') message = 'Password is too weak';
+      else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') message = 'Invalid email or password';
       showToast(message);
-      console.error('Auth error:', error);
     }
   };
 
@@ -94,22 +79,12 @@ const AuthForm = ({ auth, onAuthSuccess, showToast }) => {
         <button type="submit" className="auth-button">
           {isSignup ? 'Sign Up' : 'Log In'}
         </button>
-        <button
-          type="button"
-          className="toggle-auth"
-          onClick={() => setIsSignup(!isSignup)}
-        >
+        <button type="button" className="toggle-auth" onClick={() => setIsSignup(!isSignup)}>
           {isSignup ? 'Switch to Log In' : 'Switch to Sign Up'}
         </button>
       </form>
     </div>
   );
-};
-
-AuthForm.propTypes = {
-  auth: PropTypes.object.isRequired,
-  onAuthSuccess: PropTypes.func.isRequired,
-  showToast: PropTypes.func.isRequired,
 };
 
 export default AuthForm;
