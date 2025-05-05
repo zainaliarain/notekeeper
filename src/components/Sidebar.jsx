@@ -1,6 +1,9 @@
 import { detectBlocks, highlightSearchTerm } from '../utils/format';
+import { useAuth } from '../context/AuthContext';
 
 const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDelete, copyToClipboard }) => {
+  const { user } = useAuth();
+
   const formatQueryForSidebar = (query, term, imageUrl) => {
     const parsed = detectBlocks(query);
     const content = parsed.map((block, index) => (
@@ -30,30 +33,55 @@ const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDe
     <div className="sidebar">
       <h3>Search Results</h3>
       <ul className="search-results">
-        {notes.map((note) => (
-          <li key={note._id} className="search-result-item">
-            <div className="note-header">
-              <button
-                className="saved-button"
-                onClick={() => openPopup(note)}
-                dangerouslySetInnerHTML={{ __html: highlightSearchTerm(note.name, searchTerm) }}
-              />
-              {note.category && <span className="category-tag">{note.category}</span>}
-              {note.isPrivate && <span className="privacy-tag">🔒</span>}
-            </div>
-            <div className="search-query-content">
-              {formatQueryForSidebar(note.query, searchTerm, note.imageUrl)}
-            </div>
-            <div className="button-actions">
-              <button onClick={() => togglePin(note._id)}>
-                {note.isPinned ? '⭐ Unpin' : '☆ Pin'}
-              </button>
-              <button onClick={() => handleEdit(note)}>✏️ Edit</button>
-              <button onClick={() => handleDelete(note._id)}>🗑️ Delete</button>
-              <button onClick={() => copyToClipboard(note.query)}>📋 Copy</button>
-            </div>
-          </li>
-        ))}
+        {notes.map((note) => {
+          if (!note || !note._id || !note.name) {
+            console.log('Sidebar: Skipping invalid note:', note);
+            return null;
+          }
+          if (note.isPrivate && note.userId !== user?.uid) {
+            console.log(`Sidebar: Skipping private note ID: ${note._id} for user: ${user?.uid}`);
+            return null;
+          }
+          return (
+            <li key={note._id} className="search-result-item">
+              <div className="note-header">
+                <button
+                  className="saved-button"
+                  onClick={() => {
+                    console.log(`Sidebar: Opening note ID: ${note._id}, name: ${note.name}`);
+                    openPopup(note);
+                  }}
+                  dangerouslySetInnerHTML={{ __html: highlightSearchTerm(note.name, searchTerm) }}
+                />
+                {note.category && <span className="category-tag">{note.category}</span>}
+                {note.isPrivate && <span className="privacy-tag">🔒</span>}
+              </div>
+              <div className="search-query-content">
+                {formatQueryForSidebar(note.query, searchTerm, note.imageUrl)}
+              </div>
+              <div className="button-actions">
+                <button onClick={() => {
+                  console.log(`Sidebar: Toggling pin for note ID: ${note._id}`);
+                  togglePin(note._id);
+                }}>
+                  {note.isPinned ? '⭐ Unpin' : '☆ Pin'}
+                </button>
+                <button onClick={() => {
+                  console.log(`Sidebar: Editing note ID: ${note._id}`);
+                  handleEdit(note);
+                }}>✏️ Edit</button>
+                <button onClick={() => {
+                  console.log(`Sidebar: Deleting note ID: ${note._id}`);
+                  handleDelete(note._id);
+                }}>🗑️ Delete</button>
+                <button onClick={() => {
+                  console.log(`Sidebar: Copying note ID: ${note._id}`);
+                  copyToClipboard(note.query);
+                }}>📋 Copy</button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

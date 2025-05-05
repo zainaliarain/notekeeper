@@ -17,12 +17,12 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [recentNotes, setRecentNotes] = useState(() => {
-    // Load recentNotes from localStorage and ensure it's an array
+    // Load recentNotes from localStorage and validate
     try {
       const stored = localStorage.getItem('recentNotes');
       const parsed = stored ? JSON.parse(stored) : [];
       console.log('Initial recentNotes from localStorage:', parsed);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string' && id.trim()) : [];
     } catch (error) {
       console.error('Error loading recentNotes from localStorage:', error.message);
       return [];
@@ -60,6 +60,17 @@ function App() {
   }, [recentNotes]);
 
   useEffect(() => {
+    // Validate recentNotes against notes after fetch
+    if (notes.length > 0) {
+      const validRecentNotes = recentNotes.filter(id => notes.some(note => note._id === id));
+      if (validRecentNotes.length !== recentNotes.length) {
+        console.log('useEffect: Filtered recentNotes from', recentNotes, 'to', validRecentNotes);
+        setRecentNotes(validRecentNotes);
+      }
+    }
+  }, [notes]);
+
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       console.log('Auth state changed:', firebaseUser ? { uid: firebaseUser.uid, email: firebaseUser.email } : 'No user');
       if (firebaseUser) {
@@ -85,7 +96,7 @@ function App() {
       let token;
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          token = await firebaseUser.getIdToken(true); // Force refresh token
+          token = await firebaseUser.getIdToken(true);
           if (token) break;
           console.log(`fetchNotes: Attempt ${attempt} failed, no token`);
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -115,12 +126,6 @@ function App() {
       setNotes(res.data);
       const uniqueCategories = [...new Set(res.data.map((btn) => btn.category).filter((cat) => cat && cat.trim()))];
       setCategories(uniqueCategories);
-      // Filter recentNotes to only include existing note IDs
-      const validRecentNotes = recentNotes.filter((id) => res.data.some((note) => note._id === id));
-      if (validRecentNotes.length !== recentNotes.length) {
-        console.log('fetchNotes: Filtered recentNotes from', recentNotes, 'to', validRecentNotes);
-        setRecentNotes(validRecentNotes);
-      }
     } catch (error) {
       console.error('fetchNotes error:', {
         status: error.response?.status,
@@ -332,13 +337,12 @@ function App() {
       showToast('Please log in to view notes');
       return;
     }
-    if (!note || !note._id) {
-      console.log('HandleOpenPopup: Invalid or undefined note');
+    if (!note || !note._id || !note.name) {
+      console.log('HandleOpenPopup: Invalid or undefined note:', note);
       showToast('Note not found');
       await fetchNotes(user);
       return;
     }
-    // Verify note exists in current notes state
     const currentNote = notes.find((n) => n._id === note._id);
     if (!currentNote) {
       console.log(`HandleOpenPopup: Note ID ${note._id} not found in current notes state`);
@@ -355,6 +359,11 @@ function App() {
       currentUser: user.uid,
       source: 'handleOpenPopup',
     });
+    if (note.isPrivate && note.userId !== user.uid) {
+      console.log(`HandleOpenPopup: Unauthorized access to private note ID: ${note._id}`);
+      showToast('You are not authorized to view this note');
+      return;
+    }
     if (note.isPrivate) {
       console.log(`Setting passwordNoteId to ${note._id} for private note`);
       setPasswordNoteId(note._id);
@@ -378,8 +387,6 @@ function App() {
       setPasswordAction('view');
       return;
     }
-    // Fetch notes to ensure synchronization
-    await fetchNotes(user);
     const note = notes.find((n) => n._id === passwordNoteId);
     if (!note) {
       console.log(`VerifyPassword: Note not found for ID: ${passwordNoteId}`);
@@ -389,6 +396,7 @@ function App() {
       setPasswordNoteId(null);
       setPasswordAction('view');
       setRecentNotes(recentNotes.filter((id) => id !== passwordNoteId));
+      await fetchNotes(user);
       return;
     }
     console.log(`VerifyPassword: Verifying password for note ID: ${passwordNoteId}, action: ${passwordAction}, noteName: ${note.name}`);
@@ -399,7 +407,7 @@ function App() {
       let token;
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          token = await user.getIdToken(true); // Force refresh token
+          token = await user.getIdToken(true);
           if (token) break;
           console.log(`VerifyPassword: Attempt ${attempt} failed, no token`);
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -536,7 +544,7 @@ function App() {
 
   const filteredNotes = notes
     .filter((note) => {
-      if (!note || !note._id) {
+      if (!note || !note._id || !note.name) {
         console.log('FilteredNotes: Skipping invalid note:', note);
         return false;
       }
@@ -598,7 +606,7 @@ function App() {
                   <div className="recent-list">
                     {recentNotes.map((id) => {
                       const note = notes.find((n) => n._id === id);
-                      if (!note) {
+                      if (!note || !note.name) {
                         console.log(`RecentNotes: Skipping invalid note ID: ${id}`);
                         return null;
                       }
@@ -626,7 +634,7 @@ function App() {
                 notes={filteredNotes}
                 searchTerm={searchTerm}
                 openPopup={(note) => {
-                  if (!note || !note._id) {
+                  if (!note || !note._id || !note.name) {
                     console.log('NoteList: Invalid note passed to openPopup:', note);
                     return;
                   }
@@ -644,7 +652,7 @@ function App() {
                 notes={filteredNotes}
                 searchTerm={searchTerm}
                 openPopup={(note) => {
-                  if (!note || !note._id) {
+                  if (!note || !note._id || !note.name) {
                     console.log('Sidebar: Invalid note passed to openPopup:', note);
                     return;
                   }

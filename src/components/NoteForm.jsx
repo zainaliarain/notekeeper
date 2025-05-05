@@ -11,26 +11,24 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
-  const [password, setPassword] = useState('');
   const [image, setImage] = useState(null);
   const imageInputRef = useRef(null);
   const { user } = useAuth();
 
+  // Sync form state with editingNote
   useEffect(() => {
     if (editingNote) {
       setName(editingNote.name || '');
       setQuery(editingNote.query || '');
       setCategory(editingNote.category || '');
       setIsPrivate(editingNote.isPrivate || false);
-      setPassword(''); // Password not pre-filled for security
-      setImage(null);
+      setImage(null); // Reset image for editing
       if (imageInputRef.current) imageInputRef.current.value = '';
     } else {
       setName('');
       setQuery('');
       setCategory('');
       setIsPrivate(false);
-      setPassword('');
       setImage(null);
       if (imageInputRef.current) imageInputRef.current.value = '';
     }
@@ -46,10 +44,6 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
       showToast('Name and content are required');
       return;
     }
-    if (isPrivate && !password.trim()) {
-      showToast('Password is required for private notes');
-      return;
-    }
 
     try {
       let imageUrl = editingNote?.imageUrl || '';
@@ -60,7 +54,7 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
       }
 
       const token = await user.getIdToken();
-      const payload = { name, query, category, isPrivate, password: isPrivate ? password : '', imageUrl };
+      const payload = { name, query, category, isPrivate, imageUrl };
 
       if (editingNote) {
         await axios.put(`http://localhost:5000/buttons/${editingNote._id}`, payload, {
@@ -78,7 +72,6 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
       setQuery('');
       setCategory('');
       setIsPrivate(false);
-      setPassword('');
       setImage(null);
       if (imageInputRef.current) imageInputRef.current.value = '';
       setEditingNote(null);
@@ -93,7 +86,6 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
     setQuery('');
     setCategory('');
     setIsPrivate(false);
-    setPassword('');
     setImage(null);
     if (imageInputRef.current) imageInputRef.current.value = '';
     setEditingNote(null);
@@ -132,15 +124,6 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
           />
           Private Note
         </label>
-        {isPrivate && (
-          <input
-            type="password"
-            className="query-input"
-            placeholder="Note Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        )}
         <input
           type="file"
           accept="image/*"
@@ -170,7 +153,6 @@ NoteForm.propTypes = {
     query: PropTypes.string,
     category: PropTypes.string,
     isPrivate: PropTypes.bool,
-    password: PropTypes.string,
     imageUrl: PropTypes.string,
     userId: PropTypes.string,
   }),
