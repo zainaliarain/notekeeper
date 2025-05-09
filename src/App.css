@@ -240,6 +240,7 @@ body {
   flex: 1;
   min-width: 200px;
   background: #fff;
+  color: #1a1a1a; 
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -397,6 +398,7 @@ body {
   border-radius: 10px;
   font-family: inherit;
   background: #fff;
+  color: #1a1a1a; /* Explicitly set text color for light mode */
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -625,7 +627,7 @@ body {
 }
 
 .block {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   padding: 12px;
   border-radius: 8px;
   position: relative;
@@ -645,10 +647,38 @@ body {
 
 .block.text {
   background: #f7f7f7;
+  color: #1a1a1a;
+}
+
+.block.mixed {
+  background: linear-gradient(145deg, #e0e7ff, #d1fae5);
 }
 
 .block.image {
   background: #e5e7eb;
+}
+
+.block pre {
+  color: #1a1a1a;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 16px; /* Increased from 14px to 16px for better readability */
+  line-height: 1.1;
+  margin: 0;
+}
+
+.block .block-label {
+  font-size: 1.2rem; /* Increased size for the label */
+  font-weight: 600;
+  color: #1a1a1a;
+  display: block; /* Ensures it takes a new line */
+  margin-bottom: 8px;
+}
+
+.block .block-content {
+  font-size: 15px; /* Matches the pre font size for consistency */
+  display: block; /* Ensures content is on a new line */
 }
 
 .container.dark .block.sql {
@@ -665,24 +695,28 @@ body {
 
 .container.dark .block.text {
   background: #333;
+  color: #e0e0e0;
+}
+
+.container.dark .block.mixed {
+  background: linear-gradient(145deg, #2a2a4d, #2a4d38);
 }
 
 .container.dark .block.image {
   background: #3a3a3a;
 }
 
+.container.dark .block pre {
+  color: #e0e0e0;
+}
+
+.container.dark .block .block-label {
+  color: #e0e0e0;
+}
+
 .block:hover .popup-copy-button {
   opacity: 1;
   visibility: visible;
-}
-
-pre {
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 14px;
-  line-height: 1.6;
-  margin: 0;
 }
 
 mark {
@@ -772,45 +806,36 @@ mark {
 }
 
 .popup-box {
-  background: #fff;
-  padding: 20px;
+  background: linear-gradient(145deg, #ffffff, #f8f9fa);
+  padding: 32px;
   border-radius: 16px;
   width: 90%;
-  max-width: 900px;
+  max-width: 850px;
   max-height: 80vh;
-  min-width: 300px;
   overflow-y: auto;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+  border: 1px solid #e0e0e0;
 }
 
-.note-popup {
-  max-width: 800px;
-  max-height: 90vh;
-  padding: 24px;
-}
-
-.container.dark .popup-box,
-.container.dark .note-popup {
-  background: #2d2d2d;
+.container.dark .popup-box {
+  background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
+  border-color: #4b4b4b;
   color: #e0e0e0;
 }
 
-.popup-box h3,
-.note-popup h3 {
+.popup-box h3 {
   font-size: 1.75rem;
   font-weight: 600;
   margin-bottom: 20px;
 }
 
-.popup-box p,
-.note-popup p {
+.popup-box p {
   font-size: 1rem;
   margin-bottom: 20px;
   color: #1a1a1a;
 }
 
-.container.dark .popup-box p,
-.container.dark .note-popup p {
+.container.dark .popup-box p {
   color: #e0e0e0;
 }
 
@@ -1219,10 +1244,9 @@ mark {
     width: 100%;
     min-width: unset;
   }
-  .popup-box,
-  .note-popup {
+  .popup-box {
     width: 95%;
-    padding: 20px;
+    padding: 24px;
   }
   .title {
     font-size: 2rem;
@@ -1242,41 +1266,4 @@ mark {
     padding: 12px 20px;
     font-size: 15px;
   }
-}
-
-/* Style scrollbars for dark mode */
-.popup-box::-webkit-scrollbar,
-.note-popup::-webkit-scrollbar {
-  width: 8px;
-}
-
-.popup-box::-webkit-scrollbar-track,
-.note-popup::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-.popup-box::-webkit-scrollbar-thumb,
-.note-popup::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
-}
-
-.popup-box::-webkit-scrollbar-thumb:hover,
-.note-popup::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-.container.dark .popup-box::-webkit-scrollbar-track,
-.container.dark .note-popup::-webkit-scrollbar-track {
-  background: #2d2d2d;
-}
-
-.container.dark .popup-box::-webkit-scrollbar-thumb,
-.container.dark .note-popup::-webkit-scrollbar-thumb {
-  background: #666;
-}
-
-.container.dark .popup-box::-webkit-scrollbar-thumb:hover,
-.container.dark .note-popup::-webkit-scrollbar-thumb:hover {
-  background: #888;
 }

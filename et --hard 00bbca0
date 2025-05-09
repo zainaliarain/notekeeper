@@ -1,0 +1,15 @@
+[33maaf5534[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m HEAD@{0}: commit: Setting button updated
+[33m00bbca0[m HEAD@{1}: commit: NEw updated code with setting button
+[33m8bc1b9a[m HEAD@{2}: commit: changes applied in main brance
+[33m392c44e[m HEAD@{3}: checkout: moving from changesBranch to main
+[33m341e9df[m[33m ([m[1;31morigin/changesBranch[m[33m, [m[1;32mchangesBranch[m[33m)[m HEAD@{4}: commit: Remove sensitive service account file
+[33m2527756[m HEAD@{5}: commit: Remove sensitive service account file
+[33m3562de7[m HEAD@{6}: commit (amend): Fresh code
+[33m392c44e[m HEAD@{7}: checkout: moving from main to changesBranch
+[33m392c44e[m HEAD@{8}: commit: Fresh code
+[33mb88bd7d[m[33m ([m[1;31morigin/main[m[33m)[m HEAD@{9}: commit: Ordignal design
+[33m627fbd8[m HEAD@{10}: commit: Style changed
+[33m9df4877[m HEAD@{11}: commit: Fix marked import error and verify previous fixes
+[33m4c9cd9b[m HEAD@{12}: commit: Update .gitignore and remove tracked node_modules, .env, dist
+[33m91a0d94[m[33m ([m[1;32mmaster[m[33m)[m HEAD@{13}: checkout: moving from master to main
+[33m91a0d94[m[33m ([m[1;32mmaster[m[33m)[m HEAD@{14}: commit (initial): Initial commit

@@ -12,7 +12,7 @@ const AuthForm = ({ showToast }) => {
 
   const showPopup = (message) => {
     setPopup({ message, show: true });
-    setTimeout(() => setPopup({ message: '', show: false }), 5000); // Auto-dismiss after 5 seconds
+    setTimeout(() => setPopup({ message: '', show: false }), 5000);
   };
 
   const dismissPopup = () => {
@@ -59,9 +59,8 @@ const AuthForm = ({ showToast }) => {
   return (
     <div className="auth-container">
       {popup.show && (
-        <div className="auth-popup">
-          <span className="popup-message">{popup.message}</span>
-          <span className="popup-close" onClick={dismissPopup}>&times;</span>
+        <div className="auth-popup" onClick={dismissPopup}>
+          {popup.message}
         </div>
       )}
       <h3>{isSignup ? 'Sign Up' : 'Log In'}</h3>

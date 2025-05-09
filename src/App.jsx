@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { signOut, updateProfile, updatePassword, reauthenticateWithCredential, EmailAuthProvider, onAuthStateChanged } from 'firebase/auth';
+import { signOut, updateProfile, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { auth } from './firebase.js';
 import { useAuth } from './context/AuthContext';
 import AuthForm from './components/AuthForm';
@@ -16,18 +16,7 @@ function App() {
   const [categories, setCategories] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
-  const [recentNotes, setRecentNotes] = useState(() => {
-    // Load recentNotes from localStorage and validate
-    try {
-      const stored = localStorage.getItem('recentNotes');
-      const parsed = stored ? JSON.parse(stored) : [];
-      console.log('Initial recentNotes from localStorage:', parsed);
-      return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string' && id.trim()) : [];
-    } catch (error) {
-      console.error('Error loading recentNotes from localStorage:', error.message);
-      return [];
-    }
-  });
+  const [recentNotes, setRecentNotes] = useState([]);
   const [toast, setToast] = useState({ message: '', show: false });
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
   const [editingNote, setEditingNote] = useState(null);
@@ -41,7 +30,7 @@ function App() {
   const [showPasswordPopup, setShowPasswordPopup] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordNoteId, setPasswordNoteId] = useState(null);
-  const [passwordAction, setPasswordAction] = useState('view'); // 'view' or 'delete'
+  const [passwordAction, setPasswordAction] = useState('view');
   const fileInputRef = useRef(null);
   const { user, loading } = useAuth();
 
@@ -50,94 +39,23 @@ function App() {
   }, [darkMode]);
 
   useEffect(() => {
-    // Persist recentNotes to localStorage
+    if (user) fetchNotes();
+  }, [user]);
+
+  const fetchNotes = async () => {
     try {
-      localStorage.setItem('recentNotes', JSON.stringify(recentNotes));
-      console.log('Saved recentNotes to localStorage:', recentNotes);
-    } catch (error) {
-      console.error('Error saving recentNotes to localStorage:', error.message);
-    }
-  }, [recentNotes]);
-
-  useEffect(() => {
-    // Validate recentNotes against notes after fetch
-    if (notes.length > 0) {
-      const validRecentNotes = recentNotes.filter(id => notes.some(note => note._id === id));
-      if (validRecentNotes.length !== recentNotes.length) {
-        console.log('useEffect: Filtered recentNotes from', recentNotes, 'to', validRecentNotes);
-        setRecentNotes(validRecentNotes);
-      }
-    }
-  }, [notes]);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      console.log('Auth state changed:', firebaseUser ? { uid: firebaseUser.uid, email: firebaseUser.email } : 'No user');
-      if (firebaseUser) {
-        console.log('User authenticated, fetching notes:', firebaseUser.uid);
-        fetchNotes(firebaseUser);
-      } else {
-        console.log('No authenticated user, clearing notes');
-        setNotes([]);
-        setCategories([]);
-        setRecentNotes([]);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const fetchNotes = async (firebaseUser) => {
-    if (!firebaseUser) {
-      console.log('fetchNotes: No user, skipping');
-      return;
-    }
-    try {
-      console.log('fetchNotes: Attempting to get ID token for user:', firebaseUser.uid);
-      let token;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          token = await firebaseUser.getIdToken(true);
-          if (token) break;
-          console.log(`fetchNotes: Attempt ${attempt} failed, no token`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } catch (err) {
-          console.error(`fetchNotes: Attempt ${attempt} error:`, err.message);
-        }
-      }
-      if (!token) {
-        console.error('fetchNotes: No token retrieved after retries');
-        showToast('Authentication error: Unable to get token');
-        await signOut(auth);
-        return;
-      }
-      console.log('fetchNotes: Token retrieved:', token.substring(0, 10) + '...');
-      const requestConfig = {
-        method: 'GET',
-        url: 'http://localhost:5000/buttons',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      };
-      console.log('fetchNotes request:', {
-        url: requestConfig.url,
-        method: requestConfig.method,
-        headers: { Authorization: 'Bearer <token>', 'Content-Type': 'application/json' },
+      const token = await user.getIdToken();
+      const res = await axios.get('http://localhost:5000/buttons', {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const res = await axios(requestConfig);
-      console.log('fetchNotes: Received response with', res.data.length, 'notes:', res.data.map(n => ({ id: n._id, name: n.name })));
+      console.log('API response:', res.data); // Debug categories
       setNotes(res.data);
       const uniqueCategories = [...new Set(res.data.map((btn) => btn.category).filter((cat) => cat && cat.trim()))];
+      console.log('Fetched categories:', uniqueCategories); // Debug categories
       setCategories(uniqueCategories);
     } catch (error) {
-      console.error('fetchNotes error:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message,
-      });
-      showToast(`Error fetching notes: ${error.response?.data?.error || error.message}`);
-      if (error.response?.status === 401) {
-        await signOut(auth);
-        showToast('Session expired. Please log in again.');
-      }
-      setNotes([]);
+      showToast('Error fetching notes');
+      console.error('Fetch notes error:', error);
     }
   };
 
@@ -207,12 +125,11 @@ function App() {
     try {
       const updated = notes.map((note) => (note._id === id ? { ...note, isPinned: !note.isPinned } : note));
       setNotes(updated);
-      const token = await user.getIdToken(true);
+      const token = await user.getIdToken();
       await axios.put(`http://localhost:5000/buttons/${id}`, { isPinned: !notes.find((note) => note._id === id)?.isPinned }, {
         headers: { Authorization: `Bearer ${token}` },
       });
       showToast(updated.find((note) => note._id === id).isPinned ? 'Note pinned' : 'Note unpinned');
-      await fetchNotes(user);
     } catch (error) {
       showToast('Error updating pin status');
     }
@@ -234,13 +151,14 @@ function App() {
     }
     const note = notes.find((n) => n._id === id);
     if (!note) {
-      console.log(`HandleDelete: Note not found for ID: ${id}`);
       showToast('Note not found');
-      setRecentNotes(recentNotes.filter((noteId) => noteId !== id));
-      fetchNotes(user);
       return;
     }
-    console.log(`HandleDelete: Initiating delete for note ID: ${id}, isPrivate: ${note.isPrivate}`);
+    console.log('Note to delete:', note); // Debug problematic note
+    if (note.userId && note.userId !== user.uid) {
+      showToast('You do not have permission to delete this note');
+      return;
+    }
     if (note.isPrivate) {
       setPasswordNoteId(id);
       setPasswordAction('delete');
@@ -258,17 +176,17 @@ function App() {
       return;
     }
     try {
-      const token = await user.getIdToken(true);
+      const token = await user.getIdToken();
       await axios.delete(`http://localhost:5000/buttons/${deleteNoteId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setNotes(notes.filter((note) => note._id !== deleteNoteId));
       setRecentNotes(recentNotes.filter((noteId) => noteId !== deleteNoteId));
-      await fetchNotes(user);
+      await fetchNotes();
       showToast('Note deleted');
     } catch (error) {
       console.error('Delete error:', error.response?.data || error.message);
-      showToast(`Error deleting note: ${error.response?.data?.error || error.message}`);
+      showToast(`Error deleting note: ${error.response?.data?.message || error.message}`);
     } finally {
       setShowDeletePopup(false);
       setDeleteNoteId(null);
@@ -280,27 +198,15 @@ function App() {
       showToast('Please enter a password');
       return;
     }
-    const note = notes.find((n) => n._id === passwordNoteId);
-    if (!note) {
-      console.log(`ConfirmDeleteWithPassword: Note not found for ID: ${passwordNoteId}`);
-      showToast('Note not found');
-      setRecentNotes(recentNotes.filter((id) => id !== passwordNoteId));
-      await fetchNotes(user);
-      setShowPasswordPopup(false);
-      setPasswordInput('');
-      setPasswordNoteId(null);
-      setPasswordAction('view');
-      return;
-    }
     try {
-      const token = await user.getIdToken(true);
+      const token = await user.getIdToken();
       await axios.delete(`http://localhost:5000/buttons/${passwordNoteId}`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { password: passwordInput },
       });
       setNotes(notes.filter((note) => note._id !== passwordNoteId));
       setRecentNotes(recentNotes.filter((noteId) => noteId !== passwordNoteId));
-      await fetchNotes(user);
+      await fetchNotes();
       showToast('Note deleted');
       setShowPasswordPopup(false);
       setPasswordInput('');
@@ -310,13 +216,8 @@ function App() {
       console.error('Delete with password error:', error.response?.data || error.message);
       let message = 'Error deleting note';
       if (error.response?.status === 403) message = 'Incorrect password';
-      else if (error.response?.status === 404) {
-        message = 'Note not found on server';
-        setRecentNotes(recentNotes.filter((id) => id !== passwordNoteId));
-        await fetchNotes(user);
-      } else {
-        message = error.response?.data?.error || error.message;
-      }
+      else if (error.response?.status === 404) message = 'Note not found';
+      else message = error.response?.data?.message || error.message;
       showToast(`Error: ${message}`);
     }
   };
@@ -337,35 +238,7 @@ function App() {
       showToast('Please log in to view notes');
       return;
     }
-    if (!note || !note._id || !note.name) {
-      console.log('HandleOpenPopup: Invalid or undefined note:', note);
-      showToast('Note not found');
-      await fetchNotes(user);
-      return;
-    }
-    const currentNote = notes.find((n) => n._id === note._id);
-    if (!currentNote) {
-      console.log(`HandleOpenPopup: Note ID ${note._id} not found in current notes state`);
-      showToast('Note no longer exists');
-      setRecentNotes(recentNotes.filter((id) => id !== note._id));
-      await fetchNotes(user);
-      return;
-    }
-    console.log(`HandleOpenPopup: Opening note`, {
-      id: note._id,
-      name: note.name,
-      isPrivate: note.isPrivate,
-      userId: note.userId,
-      currentUser: user.uid,
-      source: 'handleOpenPopup',
-    });
-    if (note.isPrivate && note.userId !== user.uid) {
-      console.log(`HandleOpenPopup: Unauthorized access to private note ID: ${note._id}`);
-      showToast('You are not authorized to view this note');
-      return;
-    }
     if (note.isPrivate) {
-      console.log(`Setting passwordNoteId to ${note._id} for private note`);
       setPasswordNoteId(note._id);
       setPasswordAction('view');
       setShowPasswordPopup(true);
@@ -380,62 +253,26 @@ function App() {
       return;
     }
     if (!passwordNoteId) {
-      console.log('VerifyPassword: Invalid note ID');
       showToast('Invalid note selected');
       setShowPasswordPopup(false);
       setPasswordInput('');
       setPasswordAction('view');
       return;
     }
+    console.log('Verifying password for note ID:', passwordNoteId); // Debug
     const note = notes.find((n) => n._id === passwordNoteId);
-    if (!note) {
-      console.log(`VerifyPassword: Note not found for ID: ${passwordNoteId}`);
-      showToast('Note no longer exists');
-      setShowPasswordPopup(false);
-      setPasswordInput('');
-      setPasswordNoteId(null);
-      setPasswordAction('view');
-      setRecentNotes(recentNotes.filter((id) => id !== passwordNoteId));
-      await fetchNotes(user);
-      return;
-    }
-    console.log(`VerifyPassword: Verifying password for note ID: ${passwordNoteId}, action: ${passwordAction}, noteName: ${note.name}`);
+    console.log('Note found in state:', note); // Debug
     try {
-      if (!user) {
-        throw new Error('No authenticated user found');
-      }
-      let token;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          token = await user.getIdToken(true);
-          if (token) break;
-          console.log(`VerifyPassword: Attempt ${attempt} failed, no token`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } catch (err) {
-          console.error(`VerifyPassword: Token attempt ${attempt} error:`, err.message);
-        }
-      }
-      if (!token) {
-        throw new Error('Failed to retrieve authentication token');
-      }
-      console.log('VerifyPassword: Token retrieved:', token.substring(0, 10) + '...');
-      const requestUrl = `http://localhost:5000/buttons/${passwordNoteId}/verify-password`;
-      const requestConfig = {
-        method: 'POST',
-        url: requestUrl,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        data: { password: passwordInput },
-      };
-      console.log('VerifyPassword: Sending request:', {
-        url: requestConfig.url,
-        method: requestConfig.method,
-        headers: { Authorization: 'Bearer <token>', 'Content-Type': 'application/json' },
-        data: requestConfig.data,
+      const token = await user.getIdToken();
+      const res = await axios.post(`http://localhost:5000/buttons/${passwordNoteId}/verify-password`, {
+        password: passwordInput,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const res = await axios(requestConfig);
       if (res.data.verified) {
         if (passwordAction === 'view') {
-          openPopup(note);
+          if (note) openPopup(note);
+          else showToast('Note not found');
         } else if (passwordAction === 'delete') {
           await confirmDeleteWithPassword();
         }
@@ -447,26 +284,11 @@ function App() {
         showToast('Incorrect password');
       }
     } catch (error) {
-      console.error('Password verification error:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message,
-        url: `http://localhost:5000/buttons/${passwordNoteId}/verify-password`,
-      });
+      console.error('Password verification error:', error.response?.data || error.message);
       let message = 'Error verifying password';
-      if (error.response?.status === 404) {
-        message = 'Note no longer exists on server';
-        setRecentNotes(recentNotes.filter((id) => id !== passwordNoteId));
-        await fetchNotes(user);
-      } else if (error.response?.status === 401) {
-        message = error.response?.data?.error || 'Authentication error';
-        await signOut(auth);
-        showToast('Session expired. Please log in again.');
-      } else if (error.response?.status === 400) {
-        message = 'Invalid request';
-      } else {
-        message = typeof error.response?.data === 'string' ? 'Unexpected server response' : error.response?.data?.error || error.message;
-      }
+      if (error.response?.status === 404) message = 'Note not found';
+      else if (error.response?.status === 400) message = 'Invalid request';
+      else message = error.response?.data?.message || error.message;
       showToast(`Error: ${message}`);
     }
   };
@@ -522,7 +344,7 @@ function App() {
         showToast('File is empty');
         return;
       }
-      const token = await user.getIdToken(true);
+      const token = await user.getIdToken();
       const res = await axios.post('http://localhost:5000/buttons', {
         name: 'Imported Note',
         query: text.trim(),
@@ -534,7 +356,7 @@ function App() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setNotes([...notes, res.data]);
-      await fetchNotes(user);
+      await fetchNotes();
       showToast('Note imported successfully');
     } catch (error) {
       showToast('Error importing note');
@@ -544,10 +366,6 @@ function App() {
 
   const filteredNotes = notes
     .filter((note) => {
-      if (!note || !note._id || !note.name) {
-        console.log('FilteredNotes: Skipping invalid note:', note);
-        return false;
-      }
       const nameMatch = note.name.toLowerCase().includes(searchTerm.toLowerCase());
       const queryMatch = note.query.toLowerCase().includes(searchTerm.toLowerCase());
       const categoryMatch = !filterCategory || note.category === filterCategory;
@@ -584,7 +402,7 @@ function App() {
               <NoteForm
                 editingNote={editingNote}
                 setEditingNote={setEditingNote}
-                fetchNotes={() => fetchNotes(user)}
+                fetchNotes={fetchNotes}
                 showToast={showToast}
               />
               <div className="button-container">
@@ -606,22 +424,12 @@ function App() {
                   <div className="recent-list">
                     {recentNotes.map((id) => {
                       const note = notes.find((n) => n._id === id);
-                      if (!note || !note.name) {
-                        console.log(`RecentNotes: Skipping invalid note ID: ${id}`);
-                        return null;
-                      }
-                      if (note.isPrivate && note.userId !== user.uid) {
-                        console.log(`RecentNotes: Skipping private note ID: ${id} for user: ${user.uid}`);
-                        return null;
-                      }
+                      if (!note || (note.isPrivate && note.userId !== user.uid)) return null;
                       return (
                         <button
                           key={id}
                           className="recent-button"
-                          onClick={() => {
-                            console.log(`Recent note clicked: ID ${id}, name: ${note.name}`);
-                            handleOpenPopup(note);
-                          }}
+                          onClick={() => handleOpenPopup(note)}
                         >
                           {note.name}
                         </button>
@@ -633,14 +441,7 @@ function App() {
               <NoteList
                 notes={filteredNotes}
                 searchTerm={searchTerm}
-                openPopup={(note) => {
-                  if (!note || !note._id || !note.name) {
-                    console.log('NoteList: Invalid note passed to openPopup:', note);
-                    return;
-                  }
-                  console.log(`NoteList openPopup called for note ID: ${note._id}, name: ${note.name}`);
-                  handleOpenPopup(note);
-                }}
+                openPopup={handleOpenPopup}
                 togglePin={togglePin}
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
@@ -651,14 +452,7 @@ function App() {
               <Sidebar
                 notes={filteredNotes}
                 searchTerm={searchTerm}
-                openPopup={(note) => {
-                  if (!note || !note._id || !note.name) {
-                    console.log('Sidebar: Invalid note passed to openPopup:', note);
-                    return;
-                  }
-                  console.log(`Sidebar openPopup called for note ID: ${note._id}, name: ${note.name}`);
-                  handleOpenPopup(note);
-                }}
+                openPopup={handleOpenPopup}
                 togglePin={togglePin}
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
