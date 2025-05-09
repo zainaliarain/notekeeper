@@ -1,6 +1,17 @@
+import React from 'react';
 import PropTypes from 'prop-types';
 
-const TopBar = ({ searchTerm, setSearchTerm, filterCategory, setFilterCategory, categories, darkMode, setDarkMode, handleLogout, openSettings }) => {
+const TopBar = ({
+  searchTerm,
+  setSearchTerm,
+  filterCategory,
+  setFilterCategory,
+  categories,
+  darkMode,
+  setDarkMode,
+  handleLogout,
+  openSettings,
+}) => {
   return (
     <div className="top-bar">
       <input
@@ -16,20 +27,24 @@ const TopBar = ({ searchTerm, setSearchTerm, filterCategory, setFilterCategory, 
         onChange={(e) => setFilterCategory(e.target.value)}
       >
         <option value="">All Categories</option>
-        {categories.map((cat) => (
-          <option key={cat} value={cat}>
-            {cat}
-          </option>
-        ))}
+        {categories.length > 0 ? (
+          categories.map((category, index) => (
+            <option key={index} value={category}>
+              {category}
+            </option>
+          ))
+        ) : (
+          <option value="" disabled>No categories available</option>
+        )}
       </select>
       <button className="toggle-dark" onClick={() => setDarkMode(!darkMode)}>
-        {darkMode ? '☀️ Light' : '🌙 Dark'}
+        {darkMode ? 'Light Mode' : 'Dark Mode'}
       </button>
       <button className="settings-button" onClick={openSettings}>
-        ⚙️ Settings
+        Settings
       </button>
       <button className="logout-button" onClick={handleLogout}>
-        🚪 Logout
+        Logout
       </button>
     </div>
   );
@@ -40,7 +55,7 @@ TopBar.propTypes = {
   setSearchTerm: PropTypes.func.isRequired,
   filterCategory: PropTypes.string.isRequired,
   setFilterCategory: PropTypes.func.isRequired,
-  categories: PropTypes.array.isRequired,
+  categories: PropTypes.arrayOf(PropTypes.string).isRequired,
   darkMode: PropTypes.bool.isRequired,
   setDarkMode: PropTypes.func.isRequired,
   handleLogout: PropTypes.func.isRequired,

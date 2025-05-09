@@ -8,18 +8,28 @@ const AuthForm = ({ showToast }) => {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isSignup, setIsSignup] = useState(false);
+  const [popup, setPopup] = useState({ message: '', show: false });
+
+  const showPopup = (message) => {
+    setPopup({ message, show: true });
+    setTimeout(() => setPopup({ message: '', show: false }), 5000);
+  };
+
+  const dismissPopup = () => {
+    setPopup({ message: '', show: false });
+  };
 
   const handleAuth = async (e) => {
     e.preventDefault();
     if (!validateEmail(email)) {
-      showToast('Please enter a valid email address');
+      showPopup('Please enter a valid email address');
       return;
     }
     if (!validatePassword(password)) {
-      showToast('Password must be at least 6 characters long');
+      showPopup('Password must be at least 6 characters long');
       return;
     }
-    if (isSignup && !validateDisplayName(displayName)) {
+    if (isSignup && !displayName.trim()) {
       showToast('Please enter your name');
       return;
     }
@@ -38,16 +48,35 @@ const AuthForm = ({ showToast }) => {
       setDisplayName('');
     } catch (error) {
       let message = 'Authentication failed';
-      if (error.code === 'auth/email-already-in-use') message = 'Email is already in use';
-      else if (error.code === 'auth/invalid-email') message = 'Invalid email address';
-      else if (error.code === 'auth/weak-password') message = 'Password is too weak';
-      else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') message = 'Invalid email or password';
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          message = 'Email is already in use';
+          break;
+        case 'auth/invalid-email':
+          message = 'Invalid email address';
+          break;
+        case 'auth/weak-password':
+          message = 'Password is too weak';
+          break;
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+          message = 'Invalid email or password';
+          break;
+        default:
+          break;
+      }
       showToast(message);
+      console.error('Auth error:', error);
     }
   };
 
   return (
     <div className="auth-container">
+      {popup.show && (
+        <div className="auth-popup" onClick={dismissPopup}>
+          {popup.message}
+        </div>
+      )}
       <h3>{isSignup ? 'Sign Up' : 'Log In'}</h3>
       <form onSubmit={handleAuth} className="auth-form">
         {isSignup && (

@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { signOut } from 'firebase/auth';
-import { auth } from './firebase.js';
-import { useAuth } from './context/AuthContext';
+import { auth, storage } from '../firebase';
+import { signOut, onAuthStateChanged } from 'firebase/auth';
 import AuthForm from './components/AuthForm';
 import NoteForm from './components/NoteForm';
 import NoteList from './components/NoteList';
 import NotePopup from './components/NotePopup';
 import Sidebar from './components/Sidebar';
+import TopBar from './components/TopBar';
 import './App.css';
 
 function App() {
@@ -19,7 +19,6 @@ function App() {
   const [toast, setToast] = useState({ message: '', show: false });
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
   const [editingNote, setEditingNote] = useState(null);
-  const [popupNote, setPopupNote] = useState(null);
   const fileInputRef = useRef(null);
   const { user, loading } = useAuth();
 
@@ -37,11 +36,15 @@ function App() {
       const res = await axios.get('http://localhost:5000/buttons', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setNotes(res.data);
-      const uniqueCategories = [...new Set(res.data.map((btn) => btn.category).filter((cat) => cat && cat.trim()))];
+      console.log('Fetched buttons:', res.data);
+      setButtons(res.data);
+      const uniqueCategories = [
+        ...new Set(res.data.map((btn) => btn.category).filter((cat) => cat && cat.trim())),
+      ];
       setCategories(uniqueCategories);
     } catch (error) {
       showToast('Error fetching notes');
+      console.error('Error fetching buttons:', error);
     }
   };
 
@@ -56,63 +59,86 @@ function App() {
       showToast('Logged out successfully');
     } catch (error) {
       showToast('Error logging out');
+      console.error('Logout error:', error);
     }
   };
 
-  const togglePin = async (id) => {
-    if (!user) {
-      showToast('Please log in to pin notes');
-      return;
-    }
-    try {
-      const updated = notes.map((note) => (note._id === id ? { ...note, isPinned: !note.isPinned } : note));
-      setNotes(updated);
-      const token = await user.getIdToken();
-      await axios.put(`http://localhost:5000/buttons/${id}`, { isPinned: !notes.find((note) => note._id === id)?.isPinned }, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      showToast(updated.find((note) => note._id === id).isPinned ? 'Note pinned' : 'Note unpinned');
-    } catch (error) {
-      showToast('Error updating pin status');
-    }
-  };
-
-  const handleEdit = (note) => {
-    if (!user || (note.isPrivate && note.userId !== user.uid)) {
-      showToast('You cannot edit this note');
-      return;
-    }
-    setEditingNote(note);
-    showToast('Editing note');
-  };
-
-  const handleDelete = async (id) => {
-    if (!user) {
-      showToast('Please log in to delete notes');
-      return;
-    }
-    try {
-      const token = await user.getIdToken();
-      await axios.delete(`http://localhost:5000/buttons/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setNotes(notes.filter((note) => note._id !== id));
-      setRecentNotes(recentNotes.filter((noteId) => noteId !== id));
-      await fetchNotes();
-      showToast('Note deleted');
-    } catch (error) {
-      showToast('Error deleting note');
-    }
-  };
-
-  const openPopup = (note) => {
-    if (note.isPrivate && note.userId !== user?.uid) {
+  const openPopup = (button) => {
+    if (button.isPrivate && button.userId !== user?.uid) {
       showToast('This note is private');
       return;
     }
-    setPopupNote(note);
-    setRecentNotes([note._id, ...recentNotes.filter((id) => id !== note._id).slice(0, 4)]);
+    setPopupContent(button);
+    setShowPopup(true);
+    setRecentNotes([button._id, ...recentNotes.filter((id) => id !== button._id).slice(0, 4)]);
     showToast('Note opened');
+  };
+
+  const handleOpenPopup = async (note) => {
+    if (!user) {
+      showToast('Please log in to view notes');
+      return;
+    }
+    if (note.isPrivate) {
+      setPasswordNoteId(note._id);
+      setPasswordAction('view');
+      setShowPasswordPopup(true);
+    } else {
+      openPopup(note);
+    }
+  };
+
+  const verifyPassword = async () => {
+    if (!passwordInput.trim()) {
+      showToast('Please enter a password');
+      return;
+    }
+    if (!passwordNoteId) {
+      showToast('Invalid note selected');
+      setShowPasswordPopup(false);
+      setPasswordInput('');
+      setPasswordAction('view');
+      return;
+    }
+    console.log('Verifying password for note ID:', passwordNoteId); // Debug
+    const note = notes.find((n) => n._id === passwordNoteId);
+    console.log('Note found in state:', note); // Debug
+    try {
+      const token = await user.getIdToken();
+      const res = await axios.post(`http://localhost:5000/buttons/${passwordNoteId}/verify-password`, {
+        password: passwordInput,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.data.verified) {
+        if (passwordAction === 'view') {
+          if (note) openPopup(note);
+          else showToast('Note not found');
+        } else if (passwordAction === 'delete') {
+          await confirmDeleteWithPassword();
+        }
+        setShowPasswordPopup(false);
+        setPasswordInput('');
+        setPasswordNoteId(null);
+        setPasswordAction('view');
+      } else {
+        showToast('Incorrect password');
+      }
+    } catch (error) {
+      console.error('Password verification error:', error.response?.data || error.message);
+      let message = 'Error verifying password';
+      if (error.response?.status === 404) message = 'Note not found';
+      else if (error.response?.status === 400) message = 'Invalid request';
+      else message = error.response?.data?.message || error.message;
+      showToast(`Error: ${message}`);
+    }
+  };
+
+  const cancelPassword = () => {
+    setShowPasswordPopup(false);
+    setPasswordInput('');
+    setPasswordNoteId(null);
+    setPasswordAction('view');
   };
 
   const closePopup = () => {
@@ -194,111 +220,209 @@ function App() {
   }
 
   return (
-    <div className={`container ${darkMode ? 'dark' : ''}`}>
-      <h2 className="title">Note Keeper</h2>
-      {!user ? (
-        <AuthForm showToast={showToast} />
-      ) : (
-        <>
-          <div className="welcome-message">Welcome, {user.displayName || 'User'}!</div>
-          <div className="top-bar">
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search notes..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <select
-              className="category-filter"
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-            >
-              <option value="">All Categories</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-            <button className="toggle-dark" onClick={() => setDarkMode(!darkMode)}>
-              {darkMode ? '☀️ Light' : '🌙 Dark'}
+    <>
+      <div className="welcome-message">Welcome, {user.displayName || 'User'}!</div>
+      <TopBar
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        filterCategory={filterCategory}
+        setFilterCategory={setFilterCategory}
+        categories={categories}
+        darkMode={darkMode}
+        setDarkMode={setDarkMode}
+        handleLogout={handleLogout}
+        openSettings={() => navigate('/settings')}
+      />
+      <div className="main-content">
+        <div className="input-section">
+          <NoteForm
+            user={user}
+            storage={storage}
+            buttons={buttons}
+            setButtons={setButtons}
+            fetchButtons={fetchButtons}
+            showToast={showToast}
+            editingNote={editingNote}
+            setEditingNote={setEditingNote}
+          />
+          <div className="button-container">
+            <button className="export-button" onClick={exportNotes}>
+              Export Notes
             </button>
-            <button className="logout-button" onClick={handleLogout}>🚪 Logout</button>
-          </div>
-          <div className="main-content">
-            <div className="input-section">
-              <NoteForm
-                editingNote={editingNote}
-                setEditingNote={setEditingNote}
-                fetchNotes={fetchNotes}
-                showToast={showToast}
+            <label className="import-button">
+              Import Notes
+              <input
+                type="file"
+                accept=".txt"
+                onChange={importNotes}
+                ref={fileInputRef}
+                style={{ display: 'none' }}
               />
-              <div className="button-container">
-                <button className="export-button" onClick={exportNotes}>Export Notes</button>
-                <label className="import-button">
-                  Import Notes
-                  <input
-                    type="file"
-                    accept=".txt"
-                    onChange={importNotes}
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                  />
-                </label>
+            </label>
+          </div>
+          {recentNotes.length > 0 && (
+            <div className="recent-notes">
+              <h3>Recent Notes</h3>
+              <div className="recent-list">
+                {recentNotes.map((id) => {
+                  const btn = buttons.find((b) => b._id === id);
+                  if (!btn || (btn.isPrivate && btn.userId !== user.uid)) return null;
+                  return (
+                    <button
+                      key={id}
+                      className="recent-button"
+                      onClick={() => openPopup(btn)}
+                    >
+                      {btn.name}
+                    </button>
+                  );
+                })}
               </div>
-              {recentNotes.length > 0 && (
-                <div className="recent-notes">
-                  <h3>Recent Notes</h3>
-                  <div className="recent-list">
-                    {recentNotes.map((id) => {
-                      const note = notes.find((n) => n._id === id);
-                      if (!note || (note.isPrivate && note.userId !== user.uid)) return null;
-                      return (
-                        <button
-                          key={id}
-                          className="recent-button"
-                          onClick={() => openPopup(note)}
-                        >
-                          {note.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              <NoteList
-                notes={filteredNotes}
-                searchTerm={searchTerm}
-                openPopup={openPopup}
-                togglePin={togglePin}
-                handleEdit={handleEdit}
-                handleDelete={handleDelete}
-                copyToClipboard={copyToClipboard}
-              />
             </div>
-            {searchTerm && (
-              <Sidebar
-                notes={filteredNotes}
-                searchTerm={searchTerm}
-                openPopup={openPopup}
-                togglePin={togglePin}
-                handleEdit={handleEdit}
-                handleDelete={handleDelete}
-                copyToClipboard={copyToClipboard}
-              />
-            )}
-          </div>
-          {popupNote && (
-            <NotePopup
-              note={popupNote}
-              searchTerm={searchTerm}
-              closePopup={closePopup}
-              showToast={showToast}
-            />
           )}
-          {toast.show && <div className="toast">{toast.message}</div>}
-        </>
-      )}
-    </div>
+          <NoteList
+            user={user}
+            buttons={buttons}
+            setButtons={setButtons}
+            searchTerm={searchTerm}
+            filterCategory={filterCategory}
+            showToast={showToast}
+            openPopup={openPopup}
+            onEdit={(button) => setEditingNote(button)}
+          />
+        </div>
+        {searchTerm && (
+          <Sidebar
+            user={user}
+            buttons={buttons}
+            setButtons={setButtons}
+            searchTerm={searchTerm}
+            filterCategory={filterCategory}
+            showToast={showToast}
+            openPopup={openPopup}
+            onEdit={(button) => setEditingNote(button)}
+          />
+        )}
+      </div>
+      <NotePopup
+        button={popupContent}
+        searchTerm={searchTerm}
+        showPopup={showPopup}
+        closePopup={closePopup}
+        showToast={showToast}
+      />
+    </>
+  );
+}
+
+function SettingsPage({ user, showToast, darkMode, setDarkMode }) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <TopBar
+        searchTerm=""
+        setSearchTerm={() => {}}
+        filterCategory=""
+        setFilterCategory={() => {}}
+        categories={[]}
+        darkMode={darkMode}
+        setDarkMode={setDarkMode}
+        handleLogout={async () => {
+          await signOut(auth);
+          showToast('Logged out successfully');
+          navigate('/');
+        }}
+        openSettings={() => {}}
+      />
+      <SettingsForm user={user} showToast={showToast} onClose={() => navigate('/')} />
+    </>
+  );
+}
+
+function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState({ message: '', show: false });
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    document.addEventListener('keydown', handleKeyPress);
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress);
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('darkMode', darkMode);
+  }, [darkMode]);
+
+  const showToast = (message) => {
+    console.log('Showing toast:', message);
+    setToast({ message, show: true });
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.ctrlKey && e.key === 'Enter') {
+      // Trigger note add (handled in NoteForm)
+    }
+    if (e.key === 'Escape') {
+      // Handle popup closing in components
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="container">
+        <div className="loading">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <Router>
+      <ErrorBoundary>
+        <div className={`container ${darkMode ? 'dark' : ''}`}>
+          <h2 className="title">Note Keeper</h2>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                user ? (
+                  <MainApp
+                    user={user}
+                    setUser={setUser}
+                    showToast={showToast}
+                    darkMode={darkMode}
+                    setDarkMode={setDarkMode}
+                  />
+                ) : (
+                  <AuthForm auth={auth} onAuthSuccess={() => {}} showToast={showToast} />
+                )
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute user={user}>
+                  <SettingsPage
+                    user={user}
+                    showToast={showToast}
+                    darkMode={darkMode}
+                    setDarkMode={setDarkMode}
+                  />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+          <Toast message={toast.message} show={toast.show} setToast={setToast} />
+        </div>
+      </ErrorBoundary>
+    </Router>
   );
 }
 

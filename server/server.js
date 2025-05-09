@@ -4,99 +4,125 @@ const cors = require('cors');
 const admin = require('firebase-admin');
 const Button = require('./models/Button');
 
-// Initialize Firebase Admin SDK with service account
 const serviceAccount = require('./firebase-service-account.json');
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
 const app = express();
-app.use(cors({ origin: ['http://localhost:5173'] }));
+app.use(cors());
 app.use(express.json());
 
-// Connect to MongoDB
-mongoose.connect('mongodb://localhost/note-keeper', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose
+  .connect('mongodb://localhost/note-keeper', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
-// Middleware to authenticate Firebase tokens
 const authenticate = async (req, res, next) => {
   const token = req.headers.authorization?.split('Bearer ')[1];
-  if (!token) return res.status(401).json({ error: 'No token provided' });
-
+  if (!token) return res.status(401).json({ message: 'No token provided' });
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    req.user = decodedToken;
+    const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+    req.user = decoded;
     next();
   } catch (error) {
-    console.error('Authentication error:', error);
-    res.status(401).json({ error: 'Invalid token' });
+    console.error('Token verification error:', error.message);
+    res.status(401).json({ message: 'Invalid token' });
   }
 };
 
-// Get all accessible buttons (user's or public)
 app.get('/buttons', authenticate, async (req, res) => {
   try {
     const buttons = await Button.find({
-      $or: [{ userId: req.user.uid }, { isPrivate: false }],
+      $or: [{ isPrivate: false }, { userId: req.user.uid }],
     });
     res.json(buttons);
   } catch (error) {
-    console.error('Error fetching buttons:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error fetching buttons:', error.message);
+    res.status(500).json({ message: 'Error fetching buttons' });
   }
 });
 
-// Create a new button
 app.post('/buttons', authenticate, async (req, res) => {
   try {
-    const { name, query, category, isPinned, isPrivate, imageUrl } = req.body;
+    const { name, query, category, isPinned, isPrivate, password, imageUrl, type } = req.body;
+    if (!name || !query) {
+      return res.status(400).json({ message: 'Name and query are required' });
+    }
+    if (isPrivate && !password) {
+      return res.status(400).json({ message: 'Password is required for private notes' });
+    }
     const button = new Button({
       name,
       query,
       category,
-      isPinned: isPinned || false,
-      isPrivate: isPrivate || false,
-      imageUrl: imageUrl || '',
+      isPinned,
+      isPrivate,
+      password: isPrivate ? password : '',
+      imageUrl,
       userId: req.user.uid,
+      type: type || 'text', // Include type from request or default
     });
     await button.save();
-    res.json(button);
+    res.status(201).json(button);
   } catch (error) {
-    console.error('Error saving button:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error creating button:', error.message);
+    res.status(500).json({ message: 'Error creating button' });
   }
 });
 
-// Update an existing button
 app.put('/buttons/:id', authenticate, async (req, res) => {
   try {
-    const { name, query, category, isPinned, isPrivate, imageUrl } = req.body;
-    const button = await Button.findOne({ _id: req.params.id, userId: req.user.uid });
-    if (!button) return res.status(403).json({ error: 'Unauthorized or button not found' });
-
+    const { name, query, category, isPinned, isPrivate, password, imageUrl, type } = req.body;
+    const button = await Button.findById(req.params.id);
+    if (!button) return res.status(404).json({ message: 'Button not found' });
+    if (button.userId !== req.user.uid) {
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
     button.name = name;
     button.query = query;
     button.category = category;
-    button.isPinned = isPinned || false;
-    button.isPrivate = isPrivate || false;
-    button.imageUrl = imageUrl || '';
+    button.isPinned = isPinned;
+    button.isPrivate = isPrivate;
+    button.password = isPrivate ? password : '';
+    button.imageUrl = imageUrl;
+    button.type = type || 'text'; // Update type
     await button.save();
     res.json(button);
   } catch (error) {
-    console.error('Error updating button:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error updating button:', error.message);
+    res.status(500).json({ message: 'Error updating button' });
   }
 });
 
-// Delete a button
 app.delete('/buttons/:id', authenticate, async (req, res) => {
   try {
-    const button = await Button.findOneAndDelete({ _id: req.params.id, userId: req.user.uid });
-    if (!button) return res.status(403).json({ error: 'Unauthorized or button not found' });
+    const button = await Button.findById(req.params.id);
+    if (!button) {
+      console.log(`Button not found for ID: ${req.params.id}`);
+      return res.status(404).json({ message: 'Button not found' });
+    }
+    if (button.userId !== req.user.uid) {
+      console.log(`Unauthorized delete attempt by user ${req.user.uid} for button ${req.params.id}`);
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+    if (button.isPrivate) {
+      const { password } = req.body;
+      if (!password) {
+        console.log(`Password missing for private button delete: ${req.params.id}`);
+        return res.status(400).json({ message: 'Password required for private note' });
+      }
+      if (button.password !== password) {
+        console.log(`Incorrect password for private button delete: ${req.params.id}`);
+        return res.status(403).json({ message: 'Incorrect password' });
+      }
+    }
+    await button.deleteOne();
+    console.log(`Button deleted: ${req.params.id}`);
     res.json({ message: 'Button deleted' });
   } catch (error) {
     console.error('Error deleting button:', error);
@@ -104,6 +130,5 @@ app.delete('/buttons/:id', authenticate, async (req, res) => {
   }
 });
 
-// Start the server
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

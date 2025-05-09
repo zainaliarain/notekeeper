@@ -1,20 +1,17 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '../firebase';
-import { validateNote } from '../utils/validation';
-import { useAuth } from '../context/AuthContext';
+import PropTypes from 'prop-types';
 
-const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
-  const [name, setName] = useState(editingNote?.name || '');
-  const [query, setQuery] = useState(editingNote?.query || '');
-  const [category, setCategory] = useState(editingNote?.category || '');
-  const [isPrivate, setIsPrivate] = useState(editingNote?.isPrivate || false);
+const NoteForm = ({ user, storage, buttons, setButtons, fetchButtons, showToast }) => {
+  const [name, setName] = useState('');
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [image, setImage] = useState(null);
   const imageInputRef = useRef(null);
-  const { user } = useAuth();
 
-  const handleSubmit = async () => {
+  const handleAdd = async () => {
     if (!user) {
       showToast('Please log in to add notes');
       return;
@@ -23,39 +20,67 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
       showToast('Name and content are required');
       return;
     }
-
+    if (isPrivate && !password.trim()) {
+      showToast('Password is required for private notes');
+      return;
+    }
+  
     try {
       let imageUrl = editingNote?.imageUrl || '';
       if (image) {
         const imageRef = ref(storage, `images/${user.uid}/${image.name}`);
         await uploadBytes(imageRef, image);
         imageUrl = await getDownloadURL(imageRef);
+        console.log('Uploaded image URL:', imageUrl); // Debug image URL
       }
-
+  
       const token = await user.getIdToken();
-      const payload = { name, query, category, isPrivate, imageUrl };
-      if (editingNote) {
-        const res = await axios.put(`http://localhost:5000/buttons/${editingNote._id}`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+      if (editingId) {
+        const res = await axios.put(
+          `http://localhost:5000/buttons/${editingId}`,
+          { name, query, category, isPrivate, imageUrl },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setButtons(buttons.map((btn) => (btn._id === editingId ? res.data : btn)));
+        setEditingId(null);
         showToast('Note updated');
         setEditingNote(null);
       } else {
-        const res = await axios.post('http://localhost:5000/buttons', { ...payload, isPinned: false }, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await axios.post(
+          'http://localhost:5000/buttons',
+          { name, query, category, isPinned: false, isPrivate, imageUrl },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setButtons([...buttons, res.data]);
         showToast('Note added');
       }
+  
       setName('');
       setQuery('');
       setCategory('');
       setIsPrivate(false);
+      setPassword('');
       setImage(null);
       if (imageInputRef.current) imageInputRef.current.value = '';
-      await fetchNotes();
+      await fetchButtons(user);
     } catch (error) {
+      console.error('Error saving note:', error);
       showToast('Error saving note');
+      console.error('Error saving button:', error);
     }
+  };
+
+  const handleEdit = (button) => {
+    if (!user || (button.isPrivate && button.userId !== user.uid)) {
+      showToast('You cannot edit this note');
+      return;
+    }
+    setEditingId(button._id);
+    setName(button.name);
+    setQuery(button.query);
+    setCategory(button.category || '');
+    setIsPrivate(button.isPrivate || false);
+    showToast('Editing note');
   };
 
   return (
@@ -96,11 +121,20 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast }) => {
         ref={imageInputRef}
         className="image-input"
       />
-      <button className="add-button" onClick={handleSubmit}>
-        {editingNote ? 'Update Note' : 'Add Note'}
+      <button className="add-button" onClick={handleAdd}>
+        {editingId ? 'Update Note' : 'Add Note'}
       </button>
     </div>
   );
+};
+
+NoteForm.propTypes = {
+  user: PropTypes.object,
+  storage: PropTypes.object.isRequired,
+  buttons: PropTypes.array.isRequired,
+  setButtons: PropTypes.func.isRequired,
+  fetchButtons: PropTypes.func.isRequired,
+  showToast: PropTypes.func.isRequired,
 };
 
 export default NoteForm;
