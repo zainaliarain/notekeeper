@@ -1,8 +1,8 @@
 import { detectBlocks, highlightSearchTerm } from '../utils/format';
 
-const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDelete, copyToClipboard, unlockedNotes }) => {
-  const formatQueryForSidebar = (query, term, imageUrl, isUnlocked) => {
-    if (!isUnlocked) return null; // Don't display content for locked private notes
+const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDelete, copyToClipboard, unlockedNotes, showToast }) => {
+  const formatQueryForSidebar = (query, term, imageUrl, voiceUrl, isUnlocked) => {
+    if (!isUnlocked) return <p>Locked private note. Enter password to view content.</p>;
     const parsed = detectBlocks(query);
     const content = parsed.map((block, index) => (
       <div key={index} className={`block ${block.type}`}>
@@ -20,7 +20,18 @@ const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDe
             src={imageUrl}
             alt="Note image"
             style={{ maxWidth: '100%', borderRadius: '8px' }}
+            onError={(e) => console.log('Image failed to load:', imageUrl, e)}
           />
+        </div>
+      );
+    }
+    if (voiceUrl && isUnlocked) {
+      content.push(
+        <div key="voice" className="block voice">
+          <strong>Voice Note:</strong>
+          <audio controls src={voiceUrl} onError={(e) => console.log('Voice failed to load:', voiceUrl, e)}>
+            Your browser does not support the audio element.
+          </audio>
         </div>
       );
     }
@@ -32,36 +43,67 @@ const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDe
       <h3>Search Results</h3>
       <ul className="search-results">
         {notes.map((note) => {
+          if (!note || !note._id || !note.name || !note.query) {
+            console.warn('Sidebar: Skipping invalid note:', note);
+            return null;
+          }
           const isUnlocked = !note.isPrivate || unlockedNotes.includes(note._id);
           return (
             <li key={note._id} className="search-result-item">
               <div className="note-header">
                 <button
                   className="saved-button"
-                  onClick={() => openPopup(note)}
+                  onClick={() => {
+                    if (note.isPrivate && !isUnlocked) {
+                      showToast('Please unlock this private note to view');
+                      return;
+                    }
+                    console.log(`Sidebar: Opening note ID: ${note._id}`);
+                    openPopup(note);
+                  }}
                   dangerouslySetInnerHTML={{ __html: highlightSearchTerm(note.name, searchTerm) }}
                 />
                 {note.category && <span className="category-tag">{note.category}</span>}
                 {note.isPrivate && <span className="privacy-tag">🔒</span>}
               </div>
               <div className="search-query-content">
-                {formatQueryForSidebar(note.query, searchTerm, note.imageUrl, isUnlocked)}
+                {formatQueryForSidebar(note.query, searchTerm, note.imageUrl, note.voiceUrl, isUnlocked)}
               </div>
               <div className="button-actions">
-                <button onClick={() => togglePin(note._id)}>
-                  {note.isPinned ? '⭐ Unpin' : '☆ Pin'}
-                </button>
-                <button onClick={() => handleEdit(note)}>✏️ Edit</button>
-                <button onClick={() => handleDelete(note._id)}>🗑️ Delete</button>
                 <button
                   onClick={() => {
-                    if (!isUnlocked) {
-                      alert('Please unlock this private note to copy its content.');
-                      return;
-                    }
-                    copyToClipboard(note.query);
+                    console.log(`Sidebar: Toggling pin for note ID: ${note._id}`);
+                    togglePin(note._id);
                   }}
-                  disabled={!isUnlocked}
+                >
+                  {note.isPinned ? '⭐ Unpin' : '☆ Pin'}
+                </button>
+                <button
+                  onClick={() => {
+                    console.log(`Sidebar: Editing note ID: ${note._id}`);
+                    handleEdit(note);
+                  }}
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  onClick={() => {
+                    console.log(`Sidebar: Deleting note ID: ${note._id}`);
+                    handleDelete(note._id);
+                  }}
+                >
+                  🗑️ Delete
+                </button>
+                <button
+                  onClick={() => {
+                    console.log(`Sidebar: Copying note ID: ${note._id}`);
+                    if (note.isPrivate && !isUnlocked) {
+                      // Trigger password prompt via copyToClipboard
+                      copyToClipboard(note.query, note._id);
+                    } else {
+                      copyToClipboard(note.query);
+                    }
+                  }}
                 >
                   📋 Copy
                 </button>

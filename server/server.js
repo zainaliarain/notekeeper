@@ -10,20 +10,21 @@ app.use(express.json());
 
 // Initialize Firebase Admin SDK
 firebaseAdmin.initializeApp({
-  credential: firebaseAdmin.credential.cert(require('./serviceAccountKey.json')),
+  credential: firebaseAdmin.credential.cert(require('./firebase-service-account.json')),
 });
 
 // MongoDB Schema
 const buttonSchema = new mongoose.Schema({
-  name: String,
-  query: String,
+  name: { type: String, required: true },
+  query: { type: String, required: true },
   category: String,
   isPinned: Boolean,
   isPrivate: Boolean,
   password: String,
   imageUrl: String,
+  voiceUrl: String,
   userId: String,
-  type: { type: String, default: 'text' }, // Added type field with default
+  type: { type: String, default: 'text' },
 });
 
 const Button = mongoose.model('Button', buttonSchema);
@@ -68,23 +69,24 @@ app.get('/buttons', verifyToken, async (req, res) => {
 // POST /buttons
 app.post('/buttons', verifyToken, async (req, res) => {
   try {
-    const { name, query, category, isPinned, isPrivate, password, imageUrl, type } = req.body;
-    if (!name || !query) {
+    const { name, query, category, isPinned, isPrivate, password, imageUrl, voiceUrl, type } = req.body;
+    if (!name?.trim() || !query?.trim()) {
       return res.status(400).json({ message: 'Name and query are required' });
     }
-    if (isPrivate && !password) {
+    if (isPrivate && !password?.trim()) {
       return res.status(400).json({ message: 'Password is required for private notes' });
     }
     const button = new Button({
-      name,
-      query,
+      name: name.trim(),
+      query: query.trim(),
       category,
       isPinned,
       isPrivate,
       password: isPrivate ? password : '',
       imageUrl,
+      voiceUrl,
       userId: req.user.uid,
-      type: type || 'text', // Include type from request or default
+      type: type || 'text',
     });
     await button.save();
     res.status(201).json(button);
@@ -97,20 +99,24 @@ app.post('/buttons', verifyToken, async (req, res) => {
 // PUT /buttons/:id
 app.put('/buttons/:id', verifyToken, async (req, res) => {
   try {
-    const { name, query, category, isPinned, isPrivate, password, imageUrl, type } = req.body;
+    const { name, query, category, isPinned, isPrivate, password, imageUrl, voiceUrl, type } = req.body;
+    if (!name?.trim() || !query?.trim()) {
+      return res.status(400).json({ message: 'Name and query are required' });
+    }
     const button = await Button.findById(req.params.id);
     if (!button) return res.status(404).json({ message: 'Button not found' });
     if (button.userId !== req.user.uid) {
       return res.status(403).json({ message: 'Unauthorized' });
     }
-    button.name = name;
-    button.query = query;
+    button.name = name.trim();
+    button.query = query.trim();
     button.category = category;
     button.isPinned = isPinned;
     button.isPrivate = isPrivate;
     button.password = isPrivate ? password : '';
     button.imageUrl = imageUrl;
-    button.type = type || 'text'; // Update type
+    button.voiceUrl = voiceUrl;
+    button.type = type || 'text';
     await button.save();
     res.json(button);
   } catch (error) {
@@ -155,22 +161,27 @@ app.delete('/buttons/:id', verifyToken, async (req, res) => {
 app.post('/buttons/:id/verify-password', verifyToken, async (req, res) => {
   try {
     const { password } = req.body;
-    console.log(`Verifying password for button ID: ${req.params.id}`);
-    const button = await Button.findById(req.params.id);
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.log(`Invalid ObjectId format: ${id}`);
+      return res.status(400).json({ message: 'Invalid note ID' });
+    }
+    console.log(`Verifying password for button ID: ${id}, User: ${req.user.uid}`);
+    const button = await Button.findById(id);
     if (!button) {
-      console.log(`Button not found for ID: ${req.params.id}`);
-      return res.status(404).json({ message: 'Button not found' });
+      console.log(`Button not found for ID: ${id}`);
+      return res.status(404).json({ message: 'Note not found' });
     }
     if (!button.isPrivate) {
-      console.log(`Button is not private: ${req.params.id}`);
+      console.log(`Button is not private: ${id}`);
       return res.status(400).json({ message: 'Note is not private' });
     }
     if (button.userId !== req.user.uid) {
-      console.log(`Unauthorized access attempt by user ${req.user.uid} for button ${req.params.id}`);
+      console.log(`Unauthorized access attempt by user ${req.user.uid} for button ${id}`);
       return res.status(403).json({ message: 'Unauthorized' });
     }
     const verified = button.password === password;
-    console.log(`Password verification result for button ${req.params.id}: ${verified}`);
+    console.log(`Password verification result for button ${id}: ${verified}`);
     res.json({ verified });
   } catch (error) {
     console.error('Error verifying password:', error.message);

@@ -7,7 +7,7 @@ const firebaseConfig = {
   apiKey: 'AIzaSyBswQbYgOKRaGV6iABBj8LePA8Z3oNv-QU',
   authDomain: 'note-keeprt.firebaseapp.com',
   projectId: 'note-keeprt',
-  storageBucket: 'note-keeprt.firebasestorage.app',
+  storageBucket: 'note-keeprt.appspot.com', 
   messagingSenderId: '976544397456',
   appId: '1:976544397456:web:5592e3cf05fe8f93bf8015',
   measurementId: 'G-FBP4RS7CYR',

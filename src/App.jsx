@@ -31,6 +31,8 @@ function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordNoteId, setPasswordNoteId] = useState(null);
   const [passwordAction, setPasswordAction] = useState('view');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [unlockedNotes, setUnlockedNotes] = useState([]);
   const fileInputRef = useRef(null);
   const { user, loading } = useAuth();
 
@@ -48,14 +50,19 @@ function App() {
       const res = await axios.get('http://localhost:5000/buttons', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      console.log('API response:', res.data); // Debug categories
-      setNotes(res.data);
-      const uniqueCategories = [...new Set(res.data.map((btn) => btn.category).filter((cat) => cat && cat.trim()))];
-      console.log('Fetched categories:', uniqueCategories); // Debug categories
+      const validNotes = res.data.filter(
+        (note) => note && note._id && note.name && note.query
+      );
+      if (res.data.length !== validNotes.length) {
+        console.warn(`Filtered out ${res.data.length - validNotes.length} invalid notes`);
+      }
+      setNotes(validNotes);
+      const uniqueCategories = [
+        ...new Set(validNotes.map((btn) => btn.category).filter((cat) => cat && cat.trim())),
+      ];
       setCategories(uniqueCategories);
     } catch (error) {
-      showToast('Error fetching notes');
-      console.error('Fetch notes error:', error);
+      showToast('Error fetching notes: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -67,9 +74,10 @@ function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setUnlockedNotes([]);
       showToast('Logged out successfully');
     } catch (error) {
-      showToast('Error logging out');
+      showToast('Error logging out: ' + error.message);
     }
   };
 
@@ -123,21 +131,46 @@ function App() {
       return;
     }
     try {
+      const note = notes.find((n) => n._id === id);
+      if (!note) {
+        showToast('Note not found');
+        return;
+      }
+      if (note.isPrivate && !unlockedNotes.includes(id)) {
+        setPasswordNoteId(id);
+        setPasswordAction('pin');
+        setShowPasswordPopup(true);
+        return;
+      }
       const updated = notes.map((note) => (note._id === id ? { ...note, isPinned: !note.isPinned } : note));
       setNotes(updated);
       const token = await user.getIdToken();
-      await axios.put(`http://localhost:5000/buttons/${id}`, { isPinned: !notes.find((note) => note._id === id)?.isPinned }, {
+      await axios.put(`http://localhost:5000/buttons/${id}`, { isPinned: !note.isPinned }, {
         headers: { Authorization: `Bearer ${token}` },
       });
       showToast(updated.find((note) => note._id === id).isPinned ? 'Note pinned' : 'Note unpinned');
     } catch (error) {
-      showToast('Error updating pin status');
+      showToast('Error updating pin status: ' + (error.response?.data?.message || error.message));
     }
   };
 
   const handleEdit = (note) => {
-    if (!user || (note.isPrivate && note.userId !== user.uid)) {
-      showToast('You cannot edit this note');
+    if (!user) {
+      showToast('Please log in to edit notes');
+      return;
+    }
+    if (!note || !note._id || !note.name || !note.query) {
+      showToast('Invalid note selected for editing');
+      return;
+    }
+    if (note.isPrivate && note.userId !== user.uid) {
+      showToast('You cannot edit this private note');
+      return;
+    }
+    if (note.isPrivate && !unlockedNotes.includes(note._id)) {
+      setPasswordNoteId(note._id);
+      setPasswordAction('edit');
+      setShowPasswordPopup(true);
       return;
     }
     setEditingNote(note);
@@ -154,19 +187,18 @@ function App() {
       showToast('Note not found');
       return;
     }
-    console.log('Note to delete:', note); // Debug problematic note
     if (note.userId && note.userId !== user.uid) {
       showToast('You do not have permission to delete this note');
       return;
     }
-    if (note.isPrivate) {
+    if (note.isPrivate && !unlockedNotes.includes(id)) {
       setPasswordNoteId(id);
       setPasswordAction('delete');
       setShowPasswordPopup(true);
-    } else {
-      setDeleteNoteId(id);
-      setShowDeletePopup(true);
+      return;
     }
+    setDeleteNoteId(id);
+    setShowDeletePopup(true);
   };
 
   const confirmDelete = async () => {
@@ -182,10 +214,10 @@ function App() {
       });
       setNotes(notes.filter((note) => note._id !== deleteNoteId));
       setRecentNotes(recentNotes.filter((noteId) => noteId !== deleteNoteId));
+      setUnlockedNotes(unlockedNotes.filter((id) => id !== deleteNoteId));
       await fetchNotes();
       showToast('Note deleted');
     } catch (error) {
-      console.error('Delete error:', error.response?.data || error.message);
       showToast(`Error deleting note: ${error.response?.data?.message || error.message}`);
     } finally {
       setShowDeletePopup(false);
@@ -206,6 +238,7 @@ function App() {
       });
       setNotes(notes.filter((note) => note._id !== passwordNoteId));
       setRecentNotes(recentNotes.filter((noteId) => noteId !== passwordNoteId));
+      setUnlockedNotes(unlockedNotes.filter((id) => id !== passwordNoteId));
       await fetchNotes();
       showToast('Note deleted');
       setShowPasswordPopup(false);
@@ -213,7 +246,6 @@ function App() {
       setPasswordNoteId(null);
       setPasswordAction('view');
     } catch (error) {
-      console.error('Delete with password error:', error.response?.data || error.message);
       let message = 'Error deleting note';
       if (error.response?.status === 403) message = 'Incorrect password';
       else if (error.response?.status === 404) message = 'Note not found';
@@ -228,6 +260,16 @@ function App() {
   };
 
   const openPopup = (note) => {
+    if (!note || !note._id || !note.name || !note.query) {
+      showToast('Invalid note selected');
+      return;
+    }
+    if (note.isPrivate && !unlockedNotes.includes(note._id)) {
+      setPasswordNoteId(note._id);
+      setPasswordAction('view');
+      setShowPasswordPopup(true);
+      return;
+    }
     setPopupNote(note);
     setRecentNotes([note._id, ...recentNotes.filter((id) => id !== note._id).slice(0, 4)]);
     showToast('Note opened');
@@ -238,13 +280,13 @@ function App() {
       showToast('Please log in to view notes');
       return;
     }
-    if (note.isPrivate) {
-      setPasswordNoteId(note._id);
-      setPasswordAction('view');
-      setShowPasswordPopup(true);
-    } else {
-      openPopup(note);
-    }
+    openPopup(note);
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast('Copied to clipboard'))
+      .catch(() => showToast('Copy failed'));
   };
 
   const verifyPassword = async () => {
@@ -259,9 +301,7 @@ function App() {
       setPasswordAction('view');
       return;
     }
-    console.log('Verifying password for note ID:', passwordNoteId); // Debug
-    const note = notes.find((n) => n._id === passwordNoteId);
-    console.log('Note found in state:', note); // Debug
+    setIsVerifying(true);
     try {
       const token = await user.getIdToken();
       const res = await axios.post(`http://localhost:5000/buttons/${passwordNoteId}/verify-password`, {
@@ -270,11 +310,35 @@ function App() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.data.verified) {
+        setUnlockedNotes([...unlockedNotes, passwordNoteId]);
+        const note = notes.find((n) => n._id === passwordNoteId);
+        if (!note) {
+          showToast('Note not found');
+          setShowPasswordPopup(false);
+          setPasswordInput('');
+          setPasswordNoteId(null);
+          setPasswordAction('view');
+          return;
+        }
         if (passwordAction === 'view') {
-          if (note) openPopup(note);
-          else showToast('Note not found');
+          setPopupNote(note);
+          setRecentNotes([note._id, ...recentNotes.filter((id) => id !== note._id).slice(0, 4)]);
+          showToast('Note unlocked and opened');
+        } else if (passwordAction === 'edit') {
+          setEditingNote(note);
+          showToast('Note unlocked for editing');
         } else if (passwordAction === 'delete') {
           await confirmDeleteWithPassword();
+        } else if (passwordAction === 'copy') {
+          copyToClipboard(note.query);
+          showToast('Note unlocked and content copied');
+        } else if (passwordAction === 'pin') {
+          const updated = notes.map((n) => (n._id === passwordNoteId ? { ...n, isPinned: !n.isPinned } : n));
+          setNotes(updated);
+          await axios.put(`http://localhost:5000/buttons/${passwordNoteId}`, { isPinned: !note.isPinned }, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          showToast(updated.find((n) => n._id === passwordNoteId).isPinned ? 'Note pinned' : 'Note unpinned');
         }
         setShowPasswordPopup(false);
         setPasswordInput('');
@@ -284,12 +348,14 @@ function App() {
         showToast('Incorrect password');
       }
     } catch (error) {
-      console.error('Password verification error:', error.response?.data || error.message);
       let message = 'Error verifying password';
       if (error.response?.status === 404) message = 'Note not found';
       else if (error.response?.status === 400) message = 'Invalid request';
+      else if (error.response?.status === 401) message = 'Authentication failed';
       else message = error.response?.data?.message || error.message;
       showToast(`Error: ${message}`);
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -301,13 +367,10 @@ function App() {
   };
 
   const closePopup = () => {
+    if (popupNote) {
+      setUnlockedNotes(unlockedNotes.filter((id) => id !== popupNote._id));
+    }
     setPopupNote(null);
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text)
-      .then(() => showToast('Copied to clipboard'))
-      .catch(() => showToast('Copy failed'));
   };
 
   const exportNotes = () => {
@@ -315,9 +378,12 @@ function App() {
       showToast('Please log in to export notes');
       return;
     }
-    const textContent = notes.map((note) =>
-      `=== Note ===\nName: ${note.name}\nQuery: ${note.query}\nCategory: ${note.category || ''}\nPinned: ${note.isPinned}\nPrivate: ${note.isPrivate}\nImage URL: ${note.imageUrl || ''}\n`
-    ).join('');
+    const textContent = notes
+      .filter((note) => !note.isPrivate || note.userId === user.uid)
+      .map((note) =>
+        `=== Note ===\nName: ${note.name}\nQuery: ${note.query}\nCategory: ${note.category || ''}\nPinned: ${note.isPinned}\nPrivate: ${note.isPrivate}\nImage URL: ${note.imageUrl || ''}\nVoice URL: ${note.voiceUrl || ''}\n`
+      )
+      .join('');
     const blob = new Blob([textContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -325,7 +391,7 @@ function App() {
     link.download = 'notes.txt';
     link.click();
     URL.revokeObjectURL(url);
-    showToast('Notes exported');
+    showToast('Notes exported (images and voice notes are referenced by URL)');
   };
 
   const importNotes = async (e) => {
@@ -359,13 +425,17 @@ function App() {
       await fetchNotes();
       showToast('Note imported successfully');
     } catch (error) {
-      showToast('Error importing note');
+      showToast('Error importing note: ' + (error.response?.data?.message || error.message));
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const filteredNotes = notes
     .filter((note) => {
+      if (!note || !note.name || !note.query) {
+        console.warn('Invalid note detected in filteredNotes:', note);
+        return false;
+      }
       const nameMatch = note.name.toLowerCase().includes(searchTerm.toLowerCase());
       const queryMatch = note.query.toLowerCase().includes(searchTerm.toLowerCase());
       const categoryMatch = !filterCategory || note.category === filterCategory;
@@ -404,6 +474,8 @@ function App() {
                 setEditingNote={setEditingNote}
                 fetchNotes={fetchNotes}
                 showToast={showToast}
+                categories={categories}
+                unlockedNotes={unlockedNotes}
               />
               <div className="button-container">
                 <button className="export-button" onClick={exportNotes}>Export Notes</button>
@@ -424,7 +496,7 @@ function App() {
                   <div className="recent-list">
                     {recentNotes.map((id) => {
                       const note = notes.find((n) => n._id === id);
-                      if (!note || (note.isPrivate && note.userId !== user.uid)) return null;
+                      if (!note || (note.isPrivate && note.userId !== user.uid && !unlockedNotes.includes(id))) return null;
                       return (
                         <button
                           key={id}
@@ -446,6 +518,7 @@ function App() {
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
                 copyToClipboard={copyToClipboard}
+                unlockedNotes={unlockedNotes}
               />
             </div>
             {searchTerm && (
@@ -457,6 +530,8 @@ function App() {
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
                 copyToClipboard={copyToClipboard}
+                unlockedNotes={unlockedNotes}
+                showToast={showToast}
               />
             )}
           </div>
@@ -466,6 +541,7 @@ function App() {
               searchTerm={searchTerm}
               closePopup={closePopup}
               showToast={showToast}
+              isUnlocked={unlockedNotes.includes(popupNote._id)}
             />
           )}
           {showSettings && (
@@ -529,7 +605,13 @@ function App() {
           {showPasswordPopup && (
             <div className="popup-overlay" onClick={cancelPassword}>
               <div className="popup-box" onClick={(e) => e.stopPropagation()}>
-                <h3>{passwordAction === 'view' ? 'Enter Password' : 'Enter Password to Delete'}</h3>
+                <h3>
+                  {passwordAction === 'view' ? 'Enter Password to View' :
+                   passwordAction === 'edit' ? 'Enter Password to Edit' :
+                   passwordAction === 'delete' ? 'Enter Password to Delete' :
+                   passwordAction === 'copy' ? 'Enter Password to Copy' :
+                   'Enter Password to Pin'}
+                </h3>
                 <p>Please enter the password for this private note.</p>
                 <input
                   type="password"
@@ -537,12 +619,13 @@ function App() {
                   onChange={(e) => setPasswordInput(e.target.value)}
                   className="note-input"
                   placeholder="Password"
+                  disabled={isVerifying}
                 />
                 <div className="form-actions">
-                  <button className="submit-password" onClick={verifyPassword}>
-                    Submit
+                  <button className="submit-password" onClick={verifyPassword} disabled={isVerifying}>
+                    {isVerifying ? 'Verifying...' : 'Submit'}
                   </button>
-                  <button className="cancel-password" onClick={cancelPassword}>
+                  <button className="cancel-password" onClick={cancelPassword} disabled={isVerifying}>
                     Cancel
                   </button>
                 </div>

@@ -13,6 +13,7 @@ const AuthForm = ({ showToast }) => {
   const showPopup = (message) => {
     setPopup({ message, show: true });
     setTimeout(() => setPopup({ message: '', show: false }), 5000);
+    showToast(message);
   };
 
   const dismissPopup = () => {

@@ -100,6 +100,7 @@ body {
   border: 1px solid #d1d5db;
   border-radius: 10px;
   background: #fff;
+  color: #1a1a1a;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -1266,4 +1267,72 @@ mark {
     padding: 12px 20px;
     font-size: 15px;
   }
+}
+
+.voice-input {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.block.voice {
+  margin-top: 10px;
+}
+
+.block.voice audio {
+  width: 100%;
+  max-width: 300px;
+}
+
+[role="alert"] {
+  padding: 20px;
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  margin: 20px 0;
+}
+
+[role="alert"] pre {
+  white-space: pre-wrap;
+  background-color: #f1f1f1;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+[role="alert"] button {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+[role="alert"] button:hover {
+  background-color: #c82333;
+}
+
+.locked-message {
+  color: #ff4444;
+  font-style: italic;
+  margin: 10px 0;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.clear-button {
+  background-color: #ff4444;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.clear-button:hover {
+  background-color: #cc0000;
 }
