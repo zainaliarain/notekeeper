@@ -1,6 +1,6 @@
 import { detectBlocks, highlightSearchTerm } from '../utils/format';
 
-const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDelete, copyToClipboard, unlockedNotes, showToast }) => {
+const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDelete, copyToClipboard, unlockedNotes, showToast, deletingNotes }) => {
   const formatQueryForSidebar = (query, term, imageUrl, voiceUrl, isUnlocked) => {
     if (!isUnlocked) return <p>Locked private note. Enter password to view content.</p>;
     const parsed = detectBlocks(query);
@@ -49,7 +49,10 @@ const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDe
           }
           const isUnlocked = !note.isPrivate || unlockedNotes.includes(note._id);
           return (
-            <li key={note._id} className="search-result-item">
+            <li
+              key={note._id}
+              className={`search-result-item ${deletingNotes.includes(note._id) ? 'deleting' : ''}`}
+            >
               <div className="note-header">
                 <button
                   className="saved-button"
@@ -98,7 +101,6 @@ const Sidebar = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDe
                   onClick={() => {
                     console.log(`Sidebar: Copying note ID: ${note._id}`);
                     if (note.isPrivate && !isUnlocked) {
-                      // Trigger password prompt via copyToClipboard
                       copyToClipboard(note.query, note._id);
                     } else {
                       copyToClipboard(note.query);

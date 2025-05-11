@@ -1336,3 +1336,18 @@ mark {
 .clear-button:hover {
   background-color: #cc0000;
 }
+
+/* Animation for deleting notes */
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.query-display.deleting,
+.search-result-item.deleting {
+  animation: fadeOut 0.5s ease-in-out forwards;
+}

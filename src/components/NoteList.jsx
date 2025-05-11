@@ -1,7 +1,7 @@
 import { highlightSearchTerm } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
 
-const NoteList = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDelete, copyToClipboard, unlockedNotes }) => {
+const NoteList = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleDelete, copyToClipboard, unlockedNotes, deletingNotes }) => {
   const { user } = useAuth();
 
   return (
@@ -17,7 +17,10 @@ const NoteList = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleD
         }
         const isUnlocked = !note.isPrivate || unlockedNotes.includes(note._id);
         return (
-          <li key={note._id} className="query-display">
+          <li
+            key={note._id}
+            className={`query-display ${deletingNotes.includes(note._id) ? 'deleting' : ''}`}
+          >
             <div className="note-header">
               <button
                 className="saved-button"
@@ -59,7 +62,6 @@ const NoteList = ({ notes, searchTerm, openPopup, togglePin, handleEdit, handleD
                 onClick={() => {
                   console.log(`NoteList: Copying note ID: ${note._id}`);
                   if (note.isPrivate && !isUnlocked) {
-                    // Trigger password prompt via copyToClipboard
                     copyToClipboard(note.query, note._id);
                   } else {
                     copyToClipboard(note.query);

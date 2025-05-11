@@ -33,6 +33,7 @@ function App() {
   const [passwordAction, setPasswordAction] = useState('view');
   const [isVerifying, setIsVerifying] = useState(false);
   const [unlockedNotes, setUnlockedNotes] = useState([]);
+  const [deletingNotes, setDeletingNotes] = useState([]); // New state for animating deletions
   const fileInputRef = useRef(null);
   const { user, loading } = useAuth();
 
@@ -209,16 +210,29 @@ function App() {
     }
     try {
       const token = await user.getIdToken();
+      setDeletingNotes([...deletingNotes, deleteNoteId]); // Mark note for animation
+      const note = notes.find((n) => n._id === deleteNoteId);
+      if (!note) {
+        showToast('Note not found');
+        setDeletingNotes(deletingNotes.filter((id) => id !== deleteNoteId));
+        setShowDeletePopup(false);
+        setDeleteNoteId(null);
+        return;
+      }
       await axios.delete(`http://localhost:5000/buttons/${deleteNoteId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setNotes(notes.filter((note) => note._id !== deleteNoteId));
-      setRecentNotes(recentNotes.filter((noteId) => noteId !== deleteNoteId));
-      setUnlockedNotes(unlockedNotes.filter((id) => id !== deleteNoteId));
-      await fetchNotes();
-      showToast('Note deleted');
+      setTimeout(() => {
+        setNotes(notes.filter((note) => note._id !== deleteNoteId));
+        setRecentNotes(recentNotes.filter((noteId) => noteId !== deleteNoteId));
+        setUnlockedNotes(unlockedNotes.filter((id) => id !== deleteNoteId));
+        setDeletingNotes(deletingNotes.filter((id) => id !== deleteNoteId));
+        fetchNotes();
+        showToast('Note deleted');
+      }, 500); // Delay matches animation duration
     } catch (error) {
       showToast(`Error deleting note: ${error.response?.data?.message || error.message}`);
+      setDeletingNotes(deletingNotes.filter((id) => id !== deleteNoteId));
     } finally {
       setShowDeletePopup(false);
       setDeleteNoteId(null);
@@ -232,25 +246,30 @@ function App() {
     }
     try {
       const token = await user.getIdToken();
+      setDeletingNotes([...deletingNotes, passwordNoteId]); // Mark note for animation
       await axios.delete(`http://localhost:5000/buttons/${passwordNoteId}`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { password: passwordInput },
       });
-      setNotes(notes.filter((note) => note._id !== passwordNoteId));
-      setRecentNotes(recentNotes.filter((noteId) => noteId !== passwordNoteId));
-      setUnlockedNotes(unlockedNotes.filter((id) => id !== passwordNoteId));
-      await fetchNotes();
-      showToast('Note deleted');
-      setShowPasswordPopup(false);
-      setPasswordInput('');
-      setPasswordNoteId(null);
-      setPasswordAction('view');
+      setTimeout(() => {
+        setNotes(notes.filter((note) => note._id !== passwordNoteId));
+        setRecentNotes(recentNotes.filter((noteId) => noteId !== passwordNoteId));
+        setUnlockedNotes(unlockedNotes.filter((id) => id !== passwordNoteId));
+        setDeletingNotes(deletingNotes.filter((id) => id !== passwordNoteId));
+        fetchNotes();
+        showToast('Note deleted');
+        setShowPasswordPopup(false);
+        setPasswordInput('');
+        setPasswordNoteId(null);
+        setPasswordAction('view');
+      }, 500); // Delay matches animation duration
     } catch (error) {
       let message = 'Error deleting note';
       if (error.response?.status === 403) message = 'Incorrect password';
       else if (error.response?.status === 404) message = 'Note not found';
       else message = error.response?.data?.message || error.message;
       showToast(`Error: ${message}`);
+      setDeletingNotes(deletingNotes.filter((id) => id !== passwordNoteId));
     }
   };
 
@@ -283,7 +302,16 @@ function App() {
     openPopup(note);
   };
 
-  const copyToClipboard = (text) => {
+  const copyToClipboard = (text, noteId = null) => {
+    if (noteId) {
+      const note = notes.find((n) => n._id === noteId);
+      if (note && note.isPrivate && !unlockedNotes.includes(noteId)) {
+        setPasswordNoteId(noteId);
+        setPasswordAction('copy');
+        setShowPasswordPopup(true);
+        return;
+      }
+    }
     navigator.clipboard.writeText(text)
       .then(() => showToast('Copied to clipboard'))
       .catch(() => showToast('Copy failed'));
@@ -519,6 +547,7 @@ function App() {
                 handleDelete={handleDelete}
                 copyToClipboard={copyToClipboard}
                 unlockedNotes={unlockedNotes}
+                deletingNotes={deletingNotes} // Pass deletingNotes to NoteList
               />
             </div>
             {searchTerm && (
@@ -532,6 +561,7 @@ function App() {
                 copyToClipboard={copyToClipboard}
                 unlockedNotes={unlockedNotes}
                 showToast={showToast}
+                deletingNotes={deletingNotes} // Pass deletingNotes to Sidebar
               />
             )}
           </div>
