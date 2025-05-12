@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { signOut, updateProfile, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-import { auth } from './firebase.js';
+import { auth, storage } from './firebase.js';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from './context/AuthContext';
 import AuthForm from './components/AuthForm';
 import NoteForm from './components/NoteForm';
@@ -21,7 +22,8 @@ function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
   const [editingNote, setEditingNote] = useState(null);
   const [popupNote, setPopupNote] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
@@ -33,8 +35,11 @@ function App() {
   const [passwordAction, setPasswordAction] = useState('view');
   const [isVerifying, setIsVerifying] = useState(false);
   const [unlockedNotes, setUnlockedNotes] = useState([]);
-  const [deletingNotes, setDeletingNotes] = useState([]); // New state for animating deletions
-  const fileInputRef = useRef(null);
+  const [deletingNotes, setDeletingNotes] = useState([]);
+  const [profilePictureUrl, setProfilePictureUrl] = useState('');
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState('');
+  const profilePicInputRef = useRef(null);
+  const coverPhotoInputRef = useRef(null);
   const { user, loading } = useAuth();
 
   useEffect(() => {
@@ -42,8 +47,12 @@ function App() {
   }, [darkMode]);
 
   useEffect(() => {
-    if (user) fetchNotes();
-  }, [user]);
+    if (user) {
+      if (!showProfile) fetchNotes();
+      setProfilePictureUrl(user.photoURL || '');
+      fetchCoverPhoto();
+    }
+  }, [user, showProfile]);
 
   const fetchNotes = async () => {
     try {
@@ -67,6 +76,19 @@ function App() {
     }
   };
 
+  const fetchCoverPhoto = async () => {
+    try {
+      const token = await user.getIdToken();
+      const res = await axios.get(`http://localhost:5000/users/${user.uid}/cover-photo`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCoverPhotoUrl(res.data.coverPhotoUrl || '');
+    } catch (error) {
+      console.error('Error fetching cover photo:', error);
+      setCoverPhotoUrl('');
+    }
+  };
+
   const showToast = (message) => {
     setToast({ message, show: true });
     setTimeout(() => setToast({ message: '', show: false }), 3000);
@@ -76,17 +98,16 @@ function App() {
     try {
       await signOut(auth);
       setUnlockedNotes([]);
-      showToast('Logged out successfully');
+      setNotes([]);
+      setRecentNotes([]);
+      setCategories([]);
+      setShowProfile(false);
+      setProfilePictureUrl('');
+      setCoverPhotoUrl('');
+      showToast('Successfully logged out');
     } catch (error) {
       showToast('Error logging out: ' + error.message);
     }
-  };
-
-  const openSettings = () => {
-    setShowSettings(true);
-    setCurrentPassword('');
-    setNewPassword('');
-    setNewDisplayName('');
   };
 
   const handleSettingsSave = async (e) => {
@@ -102,7 +123,7 @@ function App() {
     try {
       const credential = EmailAuthProvider.credential(user.email, currentPassword);
       await reauthenticateWithCredential(user, credential);
-      if (newDisplayName.trim()) {
+      if (newDisplayName.trim() && newDisplayName.trim() !== user.displayName) {
         await updateProfile(user, { displayName: newDisplayName.trim() });
         showToast('Display name updated successfully');
       }
@@ -117,13 +138,55 @@ function App() {
       setCurrentPassword('');
       setNewPassword('');
       setNewDisplayName('');
-      setShowSettings(false);
     } catch (error) {
       let message = 'Failed to update settings';
       if (error.code === 'auth/wrong-password') message = 'Incorrect current password';
       else if (error.code === 'auth/requires-recent-login') message = 'Please log in again to update settings';
       showToast(message);
     }
+  };
+
+  const handleEditProfile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) {
+      showToast('No file selected');
+      return;
+    }
+    try {
+      const storageRef = ref(storage, `profile-pictures/${user.uid}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      const photoURL = await getDownloadURL(storageRef);
+      await updateProfile(user, { photoURL });
+      setProfilePictureUrl(photoURL);
+      showToast('Profile picture updated successfully');
+    } catch (error) {
+      showToast('Error uploading profile picture: ' + error.message);
+    }
+    if (profilePicInputRef.current) profilePicInputRef.current.value = '';
+  };
+
+  const handleEditCoverPhoto = async (e) => {
+    const file = e.target.files[0];
+    if (!file) {
+      showToast('No file selected');
+      return;
+    }
+    try {
+      const storageRef = ref(storage, `cover-photos/${user.uid}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      const coverPhotoURL = await getDownloadURL(storageRef);
+      const token = await user.getIdToken();
+      await axios.put(
+        `http://localhost:5000/users/${user.uid}/cover-photo`,
+        { coverPhotoUrl: coverPhotoURL },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setCoverPhotoUrl(coverPhotoURL);
+      showToast('Cover photo updated successfully');
+    } catch (error) {
+      showToast('Error uploading cover photo: ' + error.message);
+    }
+    if (coverPhotoInputRef.current) coverPhotoInputRef.current.value = '';
   };
 
   const togglePin = async (id) => {
@@ -175,6 +238,7 @@ function App() {
       return;
     }
     setEditingNote(note);
+    setShowProfile(false);
     showToast('Editing note');
   };
 
@@ -210,7 +274,7 @@ function App() {
     }
     try {
       const token = await user.getIdToken();
-      setDeletingNotes([...deletingNotes, deleteNoteId]); // Mark note for animation
+      setDeletingNotes([...deletingNotes, deleteNoteId]);
       const note = notes.find((n) => n._id === deleteNoteId);
       if (!note) {
         showToast('Note not found');
@@ -228,8 +292,8 @@ function App() {
         setUnlockedNotes(unlockedNotes.filter((id) => id !== deleteNoteId));
         setDeletingNotes(deletingNotes.filter((id) => id !== deleteNoteId));
         fetchNotes();
-        showToast('Note deleted');
-      }, 500); // Delay matches animation duration
+        showToast('Note deleted successfully');
+      }, 500);
     } catch (error) {
       showToast(`Error deleting note: ${error.response?.data?.message || error.message}`);
       setDeletingNotes(deletingNotes.filter((id) => id !== deleteNoteId));
@@ -246,7 +310,7 @@ function App() {
     }
     try {
       const token = await user.getIdToken();
-      setDeletingNotes([...deletingNotes, passwordNoteId]); // Mark note for animation
+      setDeletingNotes([...deletingNotes, passwordNoteId]);
       await axios.delete(`http://localhost:5000/buttons/${passwordNoteId}`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { password: passwordInput },
@@ -257,12 +321,12 @@ function App() {
         setUnlockedNotes(unlockedNotes.filter((id) => id !== passwordNoteId));
         setDeletingNotes(deletingNotes.filter((id) => id !== passwordNoteId));
         fetchNotes();
-        showToast('Note deleted');
+        showToast('Note deleted successfully');
         setShowPasswordPopup(false);
         setPasswordInput('');
         setPasswordNoteId(null);
         setPasswordAction('view');
-      }, 500); // Delay matches animation duration
+      }, 500);
     } catch (error) {
       let message = 'Error deleting note';
       if (error.response?.status === 403) message = 'Incorrect password';
@@ -354,6 +418,7 @@ function App() {
           showToast('Note unlocked and opened');
         } else if (passwordAction === 'edit') {
           setEditingNote(note);
+          setShowProfile(false);
           showToast('Note unlocked for editing');
         } else if (passwordAction === 'delete') {
           await confirmDeleteWithPassword();
@@ -401,63 +466,6 @@ function App() {
     setPopupNote(null);
   };
 
-  const exportNotes = () => {
-    if (!user) {
-      showToast('Please log in to export notes');
-      return;
-    }
-    const textContent = notes
-      .filter((note) => !note.isPrivate || note.userId === user.uid)
-      .map((note) =>
-        `=== Note ===\nName: ${note.name}\nQuery: ${note.query}\nCategory: ${note.category || ''}\nPinned: ${note.isPinned}\nPrivate: ${note.isPrivate}\nImage URL: ${note.imageUrl || ''}\nVoice URL: ${note.voiceUrl || ''}\n`
-      )
-      .join('');
-    const blob = new Blob([textContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'notes.txt';
-    link.click();
-    URL.revokeObjectURL(url);
-    showToast('Notes exported (images and voice notes are referenced by URL)');
-  };
-
-  const importNotes = async (e) => {
-    if (!user) {
-      showToast('Please log in to import notes');
-      return;
-    }
-    const file = e.target.files[0];
-    if (!file) {
-      showToast('No file selected');
-      return;
-    }
-    try {
-      const text = await file.text();
-      if (!text.trim()) {
-        showToast('File is empty');
-        return;
-      }
-      const token = await user.getIdToken();
-      const res = await axios.post('http://localhost:5000/buttons', {
-        name: 'Imported Note',
-        query: text.trim(),
-        category: '',
-        isPinned: false,
-        isPrivate: false,
-        imageUrl: '',
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setNotes([...notes, res.data]);
-      await fetchNotes();
-      showToast('Note imported successfully');
-    } catch (error) {
-      showToast('Error importing note: ' + (error.response?.data?.message || error.message));
-    }
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
   const filteredNotes = notes
     .filter((note) => {
       if (!note || !note.name || !note.query) {
@@ -472,6 +480,16 @@ function App() {
     })
     .sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
 
+  const totalNotes = filteredNotes.length;
+  const pinnedNotes = filteredNotes.filter((note) => note.isPinned).length;
+  const joinedDate = user?.metadata?.creationTime
+    ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : 'Unknown';
+
   if (loading) {
     return <div className="container"><div className="loading">Loading...</div></div>;
   }
@@ -481,103 +499,111 @@ function App() {
       <h2 className="title">Note Keeper</h2>
       {!user ? (
         <AuthForm showToast={showToast} />
-      ) : (
-        <>
-          <div className="welcome-message">Welcome, {user.displayName || 'User'}!</div>
-          <TopBar
-            searchTerm={searchTerm}
-            setSearchTerm={setSearchTerm}
-            filterCategory={filterCategory}
-            setFilterCategory={setFilterCategory}
-            categories={categories}
-            darkMode={darkMode}
-            setDarkMode={setDarkMode}
-            handleLogout={handleLogout}
-            openSettings={openSettings}
-          />
-          <div className="main-content">
-            <div className="input-section">
-              <NoteForm
-                editingNote={editingNote}
-                setEditingNote={setEditingNote}
-                fetchNotes={fetchNotes}
-                showToast={showToast}
-                categories={categories}
-                unlockedNotes={unlockedNotes}
-              />
-              <div className="button-container">
-                <button className="export-button" onClick={exportNotes}>Export Notes</button>
-                <label className="import-button">
-                  Import Notes
+      ) : showProfile ? (
+        <div className="profile-view">
+          <button className="back-button" onClick={() => setShowProfile(false)}>
+            Back to Notes
+          </button>
+          <div className="profile-header">
+            <div
+              className="cover-photo"
+              style={coverPhotoUrl ? { backgroundImage: `url(${coverPhotoUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+            ></div>
+            <div
+              className="profile-picture"
+              style={profilePictureUrl ? { backgroundImage: `url(${profilePictureUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+            ></div>
+            <div className="profile-info">
+              <h3>{user.displayName || 'User'}</h3>
+              <p>{user.email}</p>
+              <div className="profile-actions">
+                <label className="edit-profile-button">
+                  Edit Profile Picture
                   <input
                     type="file"
-                    accept=".txt"
-                    onChange={importNotes}
-                    ref={fileInputRef}
+                    accept="image/*"
                     style={{ display: 'none' }}
+                    ref={profilePicInputRef}
+                    onChange={handleEditProfile}
+                  />
+                </label>
+                <label className="edit-cover-button">
+                  Edit Cover Photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    ref={coverPhotoInputRef}
+                    onChange={handleEditCoverPhoto}
                   />
                 </label>
               </div>
-              {recentNotes.length > 0 && (
-                <div className="recent-notes">
-                  <h3>Recent Notes</h3>
-                  <div className="recent-list">
-                    {recentNotes.map((id) => {
-                      const note = notes.find((n) => n._id === id);
-                      if (!note || (note.isPrivate && note.userId !== user.uid && !unlockedNotes.includes(id))) return null;
-                      return (
-                        <button
-                          key={id}
-                          className="recent-button"
-                          onClick={() => handleOpenPopup(note)}
-                        >
-                          {note.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              <NoteList
-                notes={filteredNotes}
-                searchTerm={searchTerm}
-                openPopup={handleOpenPopup}
-                togglePin={togglePin}
-                handleEdit={handleEdit}
-                handleDelete={handleDelete}
-                copyToClipboard={copyToClipboard}
-                unlockedNotes={unlockedNotes}
-                deletingNotes={deletingNotes} // Pass deletingNotes to NoteList
-              />
             </div>
-            {searchTerm && (
-              <Sidebar
-                notes={filteredNotes}
-                searchTerm={searchTerm}
-                openPopup={handleOpenPopup}
-                togglePin={togglePin}
-                handleEdit={handleEdit}
-                handleDelete={handleDelete}
-                copyToClipboard={copyToClipboard}
-                unlockedNotes={unlockedNotes}
-                showToast={showToast}
-                deletingNotes={deletingNotes} // Pass deletingNotes to Sidebar
-              />
-            )}
           </div>
-          {popupNote && (
-            <NotePopup
-              note={popupNote}
-              searchTerm={searchTerm}
-              closePopup={closePopup}
-              showToast={showToast}
-              isUnlocked={unlockedNotes.includes(popupNote._id)}
-            />
-          )}
-          {showSettings && (
-            <div className="popup-overlay" onClick={() => setShowSettings(false)}>
-              <div className="popup-box settings-container" onClick={(e) => e.stopPropagation()}>
-                <h3>Account Settings</h3>
+          <div className="profile-tabs">
+            <button
+              className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
+              onClick={() => setActiveTab('overview')}
+            >
+              Overview
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'settings' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('settings');
+                setCurrentPassword('');
+                setNewPassword('');
+                setNewDisplayName(user.displayName || '');
+              }}
+            >
+              Settings
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'notes' ? 'active' : ''}`}
+              onClick={() => setActiveTab('notes')}
+            >
+              Notes
+            </button>
+          </div>
+          <div className="profile-content">
+            {activeTab === 'overview' && (
+              <div className="overview-tab">
+                <h4>About</h4>
+                <div className="profile-details">
+                  <p><strong>Name:</strong> {user.displayName || 'Not set'}</p>
+                  <p><strong>Email:</strong> {user.email}</p>
+                  <p><strong>Joined:</strong> {joinedDate}</p>
+                  <p><strong>Total Notes:</strong> {totalNotes}</p>
+                  <p><strong>Pinned Notes:</strong> {pinnedNotes}</p>
+                </div>
+                <div className="bio-section">
+                  Add a bio...
+                </div>
+                {recentNotes.length > 0 && (
+                  <div className="recent-notes">
+                    <h4>Recent Notes</h4>
+                    <div className="recent-list">
+                      {recentNotes.map((id) => {
+                        const note = notes.find((n) => n._id === id);
+                        if (!note || (note.isPrivate && note.userId !== user.uid && !unlockedNotes.includes(id))) return null;
+                        return (
+                          <button
+                            key={id}
+                            className="recent-button"
+                            onClick={() => handleOpenPopup(note)}
+                          >
+                            {note.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {activeTab === 'settings' && (
+              <div className="settings-tab">
+                <h4>Account Settings</h4>
                 <form className="settings-form" onSubmit={handleSettingsSave}>
                   <input
                     type="text"
@@ -592,10 +618,11 @@ function App() {
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     className="note-input"
+                    required
                   />
                   <input
                     type="password"
-                    placeholder="New Password"
+                    placeholder="New Password (optional)"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     className="note-input"
@@ -604,73 +631,146 @@ function App() {
                     <button type="submit" className="settings-button">
                       Save Changes
                     </button>
-                    <button
-                      type="button"
-                      className="close-settings"
-                      onClick={() => setShowSettings(false)}
-                    >
-                      Close
+                    <button type="button" className="logout-button" onClick={handleLogout}>
+                      Logout
                     </button>
                   </div>
                 </form>
               </div>
-            </div>
-          )}
-          {showDeletePopup && (
-            <div className="popup-overlay" onClick={cancelDelete}>
-              <div className="popup-box" onClick={(e) => e.stopPropagation()}>
-                <h3>Confirm Deletion</h3>
-                <p>Are you sure you want to delete this note?</p>
-                <div className="form-actions">
-                  <button className="confirm-delete" onClick={confirmDelete}>
-                    Confirm
-                  </button>
-                  <button className="cancel-delete" onClick={cancelDelete}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-          {showPasswordPopup && (
-            <div className="popup-overlay" onClick={cancelPassword}>
-              <div className="popup-box" onClick={(e) => e.stopPropagation()}>
-                <h3>
-                  {passwordAction === 'view' ? 'Enter Password to View' :
-                   passwordAction === 'edit' ? 'Enter Password to Edit' :
-                   passwordAction === 'delete' ? 'Enter Password to Delete' :
-                   passwordAction === 'copy' ? 'Enter Password to Copy' :
-                   'Enter Password to Pin'}
-                </h3>
-                <p>Please enter the password for this private note.</p>
-                <input
-                  type="password"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  className="note-input"
-                  placeholder="Password"
-                  disabled={isVerifying}
+            )}
+            {activeTab === 'notes' && (
+              <div className="notes-tab">
+                <h4>Your Notes</h4>
+                <NoteList
+                  notes={filteredNotes}
+                  searchTerm={searchTerm}
+                  openPopup={handleOpenPopup}
+                  togglePin={togglePin}
+                  handleEdit={handleEdit}
+                  handleDelete={handleDelete}
+                  copyToClipboard={copyToClipboard}
+                  unlockedNotes={unlockedNotes}
+                  deletingNotes={deletingNotes}
                 />
-                <div className="form-actions">
-                  <button className="submit-password" onClick={verifyPassword} disabled={isVerifying}>
-                    {isVerifying ? 'Verifying...' : 'Submit'}
-                  </button>
-                  <button className="cancel-password" onClick={cancelPassword} disabled={isVerifying}>
-                    Cancel
-                  </button>
-                </div>
               </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="welcome-message">Welcome, {user.displayName || 'User'}!</div>
+          <TopBar
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            filterCategory={filterCategory}
+            setFilterCategory={setFilterCategory}
+            categories={categories}
+            darkMode={darkMode}
+            setDarkMode={setDarkMode}
+            handleLogout={handleLogout}
+            openProfile={() => setShowProfile(true)}
+          />
+          <div className="main-content">
+            <div className="input-section">
+              <NoteForm
+                editingNote={editingNote}
+                setEditingNote={setEditingNote}
+                fetchNotes={fetchNotes}
+                showToast={showToast}
+                categories={categories}
+                unlockedNotes={unlockedNotes}
+                setUnlockedNotes={setUnlockedNotes}
+                notes={notes} // Pass notes for export
+              />
+              <NoteList
+                notes={filteredNotes}
+                searchTerm={searchTerm}
+                openPopup={handleOpenPopup}
+                togglePin={togglePin}
+                handleEdit={handleEdit}
+                handleDelete={handleDelete}
+                copyToClipboard={copyToClipboard}
+                unlockedNotes={unlockedNotes}
+                deletingNotes={deletingNotes}
+              />
             </div>
-          )}
-          {toast.show && (
-            <div className="auth-popup">
-              <span className="popup-message">{toast.message}</span>
-              <span className="popup-close" onClick={() => setToast({ message: '', show: false })}>
-                ×
-              </span>
-            </div>
-          )}
+            {searchTerm && (
+              <Sidebar
+                searchTerm={searchTerm}
+                notes={filteredNotes}
+                openPopup={handleOpenPopup}
+                copyToClipboard={copyToClipboard}
+                unlockedNotes={unlockedNotes}
+              />
+            )}
+          </div>
         </>
+      )}
+      {popupNote && (
+        <NotePopup
+          note={popupNote}
+          closePopup={closePopup}
+          copyToClipboard={copyToClipboard}
+          handleEdit={() => handleEdit(popupNote)}
+          handleDelete={() => handleDelete(popupNote._id)}
+          togglePin={() => togglePin(popupNote._id)}
+          isUnlocked={unlockedNotes.includes(popupNote._id)}
+        />
+      )}
+      {showDeletePopup && (
+        <div className="popup-overlay">
+          <div className="popup-box">
+            <h3>Confirm Deletion</h3>
+            <p>Are you sure you want to delete this note?</p>
+            <div className="form-actions">
+              <button className="confirm-delete" onClick={confirmDelete}>
+                Delete
+              </button>
+              <button className="cancel-delete" onClick={cancelDelete}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showPasswordPopup && (
+        <div className="popup-overlay">
+          <div className="popup-box">
+            <h3>Enter Password</h3>
+            <input
+              type="password"
+              placeholder="Password"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              className="note-input"
+              disabled={isVerifying}
+            />
+            <div className="form-actions">
+              <button
+                className="submit-password"
+                onClick={verifyPassword}
+                disabled={isVerifying}
+              >
+                {isVerifying ? 'Verifying...' : 'Submit'}
+              </button>
+              <button
+                className="cancel-password"
+                onClick={cancelPassword}
+                disabled={isVerifying}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast.show && (
+        <div className="auth-popup">
+          <span className="popup-message">{toast.message}</span>
+          <span className="popup-close" onClick={() => setToast({ message: '', show: false })}>
+            ×
+          </span>
+        </div>
       )}
     </div>
   );

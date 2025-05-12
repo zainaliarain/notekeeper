@@ -3,8 +3,9 @@ import axios from 'axios';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { FaPlus, FaFileExport, FaFileImport, FaTimes } from 'react-icons/fa';
 
-const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast, categories, unlockedNotes }) => {
+const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast, categories, unlockedNotes, notes }) => {
   const [name, setName] = useState('');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
@@ -12,6 +13,7 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast, categori
   const [password, setPassword] = useState('');
   const [image, setImage] = useState(null);
   const imageInputRef = useRef(null);
+  const fileInputRef = useRef(null); // For import file input
   const { user } = useAuth();
 
   // Update form fields when editingNote changes
@@ -94,6 +96,62 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast, categori
     }
   };
 
+  const exportNotes = () => {
+    if (!user) {
+      showToast('Please log in to export notes');
+      return;
+    }
+    const textContent = notes
+      .filter((note) => !note.isPrivate || note.userId === user.uid)
+      .map((note) =>
+        `=== Note ===\nName: ${note.name}\nQuery: ${note.query}\nCategory: ${note.category || ''}\nPinned: ${note.isPinned}\nPrivate: ${note.isPrivate}\nImage URL: ${note.imageUrl || ''}\nVoice URL: ${note.voiceUrl || ''}\n`
+      )
+      .join('');
+    const blob = new Blob([textContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'notes.txt';
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast('Notes exported successfully');
+  };
+
+  const importNotes = async (e) => {
+    if (!user) {
+      showToast('Please log in to import notes');
+      return;
+    }
+    const file = e.target.files[0];
+    if (!file) {
+      showToast('No file selected');
+      return;
+    }
+    try {
+      const text = await file.text();
+      if (!text.trim()) {
+        showToast('File is empty');
+        return;
+      }
+      const token = await user.getIdToken();
+      const res = await axios.post('http://localhost:5000/buttons', {
+        name: 'Imported Note',
+        query: text.trim(),
+        category: '',
+        isPinned: false,
+        isPrivate: false,
+        imageUrl: '',
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      showToast('Note imported successfully');
+      await fetchNotes();
+    } catch (error) {
+      showToast('Error importing note: ' + (error.response?.data?.message || error.message));
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   return (
     <div className="input-container">
       <input
@@ -148,12 +206,40 @@ const NoteForm = ({ editingNote, setEditingNote, fetchNotes, showToast, categori
         className="image-input"
       />
       <div className="form-actions">
-        <button className="add-button" onClick={handleSubmit}>
-          {editingNote ? 'Update Note' : 'Add Note'}
+        <button
+          className="add-icon"
+          onClick={handleSubmit}
+          title={editingNote ? 'Update Note' : 'Add Note'}
+          aria-label={editingNote ? 'Update Note' : 'Add Note'}
+        >
+          <FaPlus />
         </button>
+        <button
+          className="export-icon"
+          onClick={exportNotes}
+          title="Export Notes"
+          aria-label="Export Notes"
+        >
+          <FaFileExport />
+        </button>
+        <label className="import-icon">
+          <input
+            type="file"
+            accept=".txt"
+            onChange={importNotes}
+            style={{ display: 'none' }}
+            ref={fileInputRef}
+          />
+          <FaFileImport />
+        </label>
         {editingNote && (
-          <button className="clear-button" onClick={clearForm}>
-            Clear
+          <button
+            className="clear-icon"
+            onClick={clearForm}
+            title="Clear Form"
+            aria-label="Clear Form"
+          >
+            <FaTimes />
           </button>
         )}
       </div>
