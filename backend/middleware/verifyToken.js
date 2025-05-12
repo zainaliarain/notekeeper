@@ -15,4 +15,8 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+<<<<<<< HEAD
 module.exports = verifyToken;   
+=======
+module.exports = verifyToken;;   
+>>>>>>> main
